@@ -1,0 +1,15 @@
+// add all doc that has to be ignored
+node_modules/
+dist/
+.env
+coverage/
+# Ignore logs
+logs/
+*.log
+npm-debug.log*
+# Ignore runtime data
+pids/
+# Ignore directories
+lib-cov/
+# Ignore test coverage reports
+*.lcov
