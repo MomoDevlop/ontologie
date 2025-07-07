@@ -54,7 +54,7 @@ class SearchService {
 
       const result = await neo4jConnection.executeQuery(query, { 
         searchTerm: searchTerm.trim(),
-        limit: parseInt(limit)
+        limit: neo4j.int(parseInt(limit))
       });
 
       return result.records.map(record => ({
@@ -173,7 +173,7 @@ class SearchService {
 
       const result = await neo4jConnection.executeQuery(query, {
         entityId: parseInt(entityId),
-        limit: parseInt(limit)
+        limit: neo4j.int(parseInt(limit))
       });
 
       return result.records.map(record => ({
@@ -300,7 +300,7 @@ class SearchService {
 
       const result = await neo4jConnection.executeQuery(query, {
         entityId: parseInt(entityId),
-        limit: parseInt(limit)
+        limit: neo4j.int(parseInt(limit))
       });
 
       return result.records.map(record => ({
@@ -342,7 +342,7 @@ class SearchService {
       `;
 
       const result = await neo4jConnection.executeQuery(query, {
-        limit: parseInt(limit)
+        limit: neo4j.int(parseInt(limit))
       });
 
       return result.records.map(record => ({
