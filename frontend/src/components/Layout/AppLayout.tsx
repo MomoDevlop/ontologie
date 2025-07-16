@@ -38,6 +38,8 @@ import {
   Person,
   AccountBalance,
   Timeline,
+  Assessment,
+  TouchApp,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -95,6 +97,12 @@ const navigationItems = [
     description: 'Timbres sonores',
   },
   {
+    text: 'Techniques',
+    icon: <TouchApp />,
+    path: '/techniques',
+    description: 'Techniques de jeu',
+  },
+  {
     text: 'Artisans',
     icon: <Person />,
     path: '/artisans',
@@ -111,6 +119,12 @@ const navigationItems = [
     icon: <Timeline />,
     path: '/relations',
     description: 'Relations sémantiques',
+  },
+  {
+    text: 'Analytics',
+    icon: <Assessment />,
+    path: '/analytics',
+    description: 'Tableau de bord analytique',
   },
 ];
 
