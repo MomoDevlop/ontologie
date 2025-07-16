@@ -1,6 +1,7 @@
 const BaseService = require('./BaseService');
 const { InstrumentSchema } = require('../models/ontologyModels');
 const neo4jConnection = require('../config/neo4j');
+const neo4j = require('neo4j-driver');
 
 class InstrumentService extends BaseService {
   constructor() {
@@ -209,6 +210,7 @@ class InstrumentService extends BaseService {
       const record = result.records[0];
       
       return {
+        total: record.get('totalInstruments').toNumber(),
         totalInstruments: record.get('totalInstruments').toNumber(),
         totalFamilles: record.get('totalFamilles').toNumber(),
         totalLocalites: record.get('totalLocalites').toNumber(),

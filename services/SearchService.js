@@ -79,14 +79,14 @@ class SearchService {
              point({latitude: l.latitude, longitude: l.longitude}) as locationPoint,
              point({latitude: $latitude, longitude: $longitude}) as searchPoint
              
-        WHERE distance(locationPoint, searchPoint) <= $radius * 1000
+        WHERE point.distance(locationPoint, searchPoint) <= $radius * 1000
         
         OPTIONAL MATCH (i:Instrument)-[:localiseA]->(l)
         OPTIONAL MATCH (g:GroupeEthnique)-[:localiseA]->(l)
         OPTIONAL MATCH (r:Rythme)-[:localiseA]->(l)
         
         RETURN l,
-               distance(locationPoint, searchPoint) / 1000 as distanceKm,
+               point.distance(locationPoint, searchPoint) / 1000 as distanceKm,
                collect(DISTINCT i) as instruments,
                collect(DISTINCT g) as groupesEthniques,
                collect(DISTINCT r) as rythmes
@@ -99,13 +99,16 @@ class SearchService {
         radius: parseFloat(radius)
       });
 
-      return result.records.map(record => ({
-        localite: this.formatNode(record.get('l')),
-        distance: record.get('distanceKm').toNumber(),
-        instruments: record.get('instruments').filter(i => i).map(i => this.formatNode(i)),
-        groupesEthniques: record.get('groupesEthniques').filter(g => g).map(g => this.formatNode(g)),
-        rythmes: record.get('rythmes').filter(r => r).map(r => this.formatNode(r))
-      }));
+      return result.records.map(record => {
+        const distance = record.get('distanceKm');
+        return {
+          localite: this.formatNode(record.get('l')),
+          distance: neo4j.isInt(distance) ? distance.toNumber() : parseFloat(distance),
+          instruments: record.get('instruments').filter(i => i).map(i => this.formatNode(i)),
+          groupesEthniques: record.get('groupesEthniques').filter(g => g).map(g => this.formatNode(g)),
+          rythmes: record.get('rythmes').filter(r => r).map(r => this.formatNode(r))
+        };
+      });
     } catch (error) {
       throw new Error(`Erreur lors de la recherche géographique: ${error.message}`);
     }

@@ -54,9 +54,9 @@ class BaseService {
           parameters[paramName] = filters[key];
           
           if (typeof filters[key] === 'string') {
-            return `toLower(n.${key}) CONTAINS toLower(${paramName})`;
+            return `toLower(n.${key}) CONTAINS toLower($${paramName})`;
           } else {
-            return `n.${key} = ${paramName}`;
+            return `n.${key} = $${paramName}`;
           }
         });
         whereClause = `WHERE ${conditions.join(' AND ')}`;
@@ -142,7 +142,7 @@ class BaseService {
 
       // Construction de la requête de mise à jour
       const setClause = Object.keys(value)
-        .map(key => `n.${key} = ${key}`)
+        .map(key => `n.${key} = $${key}`)
         .join(', ');
 
       const query = `
@@ -252,6 +252,20 @@ class BaseService {
       return result.records[0].get('total').toNumber();
     } catch (error) {
       throw new Error(`Erreur lors du comptage: ${error.message}`);
+    }
+  }
+
+  // Obtenir les statistiques génériques
+  async getStatistics() {
+    try {
+      const totalCount = await this.count();
+      
+      return {
+        total: totalCount,
+        label: this.label
+      };
+    } catch (error) {
+      throw new Error(`Erreur lors de la récupération des statistiques: ${error.message}`);
     }
   }
 
