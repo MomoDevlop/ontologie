@@ -19,8 +19,22 @@ import Dashboard from './pages/Dashboard/Dashboard';
 import SearchPage from './pages/Search/SearchPage';
 import InstrumentsPage from './pages/Instruments/InstrumentsPage';
 
-// Placeholder components for other pages
-import { Box, Typography, Paper, Alert } from '@mui/material';
+// Import entity pages
+import FamillesPage from './pages/Entities/FamillesPage';
+import GroupesEthniquesPage from './pages/Entities/GroupesEthniquesPage';
+import LocalitesPage from './pages/Entities/LocalitesPage';
+import MateriauxPage from './pages/Entities/MateriauxPage';
+import TimbresPage from './pages/Entities/TimbresPage';
+import TechniquesPage from './pages/Entities/TechniquesPage';
+import ArtisansPage from './pages/Entities/ArtisansPage';
+import PatrimoinesPage from './pages/Entities/PatrimoinesPage';
+
+// Import relations and analytics pages
+import RelationsPage from './pages/Relations/RelationsPage';
+import AnalyticsDashboard from './pages/Analytics/AnalyticsDashboard';
+
+// Utility components
+import { Box, Typography, Alert } from '@mui/material';
 
 // Generic placeholder component for unimplemented pages
 const PlaceholderPage: React.FC<{ title: string; description: string }> = ({ title, description }) => (
@@ -65,85 +79,56 @@ function App() {
               element={<InstrumentsPage />} 
             />
             
-            {/* Placeholder pages for other entities */}
+            {/* Entity Management Pages */}
             <Route 
               path="/familles" 
-              element={
-                <PlaceholderPage 
-                  title="Familles d'Instruments"
-                  description="Gérez les familles d'instruments : Cordes, Vents, Percussions, Électrophones"
-                />
-              } 
+              element={<FamillesPage />} 
             />
             
             <Route 
               path="/groupes-ethniques" 
-              element={
-                <PlaceholderPage 
-                  title="Groupes Ethniques"
-                  description="Explorez les groupes ethniques et leurs traditions musicales"
-                />
-              } 
+              element={<GroupesEthniquesPage />} 
             />
             
             <Route 
               path="/localites" 
-              element={
-                <PlaceholderPage 
-                  title="Localités Géographiques"
-                  description="Cartographie des origines géographiques des instruments"
-                />
-              } 
+              element={<LocalitesPage />} 
             />
             
             <Route 
               path="/materiaux" 
-              element={
-                <PlaceholderPage 
-                  title="Matériaux de Construction"
-                  description="Base de données des matériaux utilisés dans la fabrication d'instruments"
-                />
-              } 
+              element={<MateriauxPage />} 
             />
             
             <Route 
               path="/timbres" 
-              element={
-                <PlaceholderPage 
-                  title="Timbres Sonores"
-                  description="Classification des caractéristiques sonores des instruments"
-                />
-              } 
+              element={<TimbresPage />} 
+            />
+            
+            <Route 
+              path="/techniques" 
+              element={<TechniquesPage />} 
             />
             
             <Route 
               path="/artisans" 
-              element={
-                <PlaceholderPage 
-                  title="Artisans Fabricants"
-                  description="Répertoire des artisans et luthiers spécialisés"
-                />
-              } 
+              element={<ArtisansPage />} 
             />
             
             <Route 
               path="/patrimoines" 
-              element={
-                <PlaceholderPage 
-                  title="Patrimoine Culturel"
-                  description="Préservation et documentation du patrimoine musical mondial"
-                />
-              } 
+              element={<PatrimoinesPage />} 
+            />
+            
+            {/* Relations and Analytics */}
+            <Route 
+              path="/relations" 
+              element={<RelationsPage />} 
             />
             
             <Route 
-              path="/relations" 
-              element={
-                <PlaceholderPage 
-                  title="Relations Sémantiques"
-                  description="Visualisation et gestion des relations entre entités de l'ontologie"
-                />
-              } 
+              path="/analytics" 
+              element={<AnalyticsDashboard />} 
             />
             
             {/* 404 Not Found */}
