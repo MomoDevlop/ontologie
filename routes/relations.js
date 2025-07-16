@@ -11,14 +11,14 @@ const validateIds = (req, res, next) => {
   if (isNaN(sourceId) || sourceId < 0) {
     return res.status(400).json({
       error: 'ID source invalide',
-      message: 'L\'ID source doit être un nombre entier positif'
+      message: 'L\'ID source doit être un nombre entier >= 0'
     });
   }
   
   if (isNaN(targetId) || targetId < 0) {
     return res.status(400).json({
       error: 'ID cible invalide',
-      message: 'L\'ID cible doit être un nombre entier positif'
+      message: 'L\'ID cible doit être un nombre entier >= 0'
     });
   }
   
@@ -46,6 +46,54 @@ const validateRelationType = (req, res, next) => {
   req.relationType = relationType;
   next();
 };
+
+// GET /api/relations - Récupérer toutes les relations
+router.get('/', async (req, res) => {
+  try {
+    const { page = 1, limit = 50, relationType } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let relations;
+    if (relationType) {
+      relations = await relationService.getRelationsByType(relationType, parseInt(limit));
+    } else {
+      relations = await relationService.getAllRelations(parseInt(limit), skip);
+    }
+
+    res.json({
+      success: true,
+      data: relations,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: relations.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la récupération des relations',
+      message: error.message
+    });
+  }
+});
+
+// GET /api/relations/ontology - Structure ontologique pour visualisation
+router.get('/ontology', async (req, res) => {
+  try {
+    const ontologyStructure = await relationService.getOntologyStructure();
+    res.json({
+      success: true,
+      data: ontologyStructure
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la récupération de la structure ontologique',
+      message: error.message
+    });
+  }
+});
 
 // GET /api/relations/types - Liste des types de relations disponibles
 router.get('/types', (req, res) => {
@@ -145,10 +193,10 @@ router.get('/paths/:sourceId/:targetId', async (req, res) => {
     const targetId = parseInt(req.params.targetId);
     const { maxDepth = 3 } = req.query;
 
-    if (isNaN(sourceId) || isNaN(targetId)) {
+    if (isNaN(sourceId) || isNaN(targetId) || sourceId < 0 || targetId < 0) {
       return res.status(400).json({
         error: 'IDs invalides',
-        message: 'Les IDs doivent être des nombres entiers'
+        message: 'Les IDs doivent être des nombres entiers >= 0'
       });
     }
 
@@ -223,10 +271,10 @@ router.delete('/:sourceId/:targetId/:relationType', async (req, res) => {
     const targetId = parseInt(req.params.targetId);
     const relationType = req.params.relationType;
 
-    if (isNaN(sourceId) || isNaN(targetId)) {
+    if (isNaN(sourceId) || isNaN(targetId) || sourceId < 0 || targetId < 0) {
       return res.status(400).json({
         error: 'IDs invalides',
-        message: 'Les IDs doivent être des nombres entiers'
+        message: 'Les IDs doivent être des nombres entiers >= 0'
       });
     }
 
