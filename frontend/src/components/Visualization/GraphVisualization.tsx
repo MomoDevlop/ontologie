@@ -307,12 +307,225 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
     };
   }, []);
 
-  /**\n   * Load graph data from API\n   */\n  const loadGraphData = async () => {\n    setLoading(true);\n    setError(null);\n\n    try {\n      // Load relations\n      const relationsResponse = await relationsApi.getAll();\n      console.log('Relations response:', relationsResponse);\n      if (!relationsResponse.success) {\n        throw new Error(relationsResponse.error || 'Failed to load relations');\n      }\n\n      // Load all entities from different endpoints\n      const [instrumentsResponse, famillesResponse, groupesResponse, localitesResponse] = await Promise.all([\n        instrumentsApi.getAll({ limit: 1000 }),\n        fetch('/api/familles').then(r => r.json()),\n        fetch('/api/groupes-ethniques').then(r => r.json()),\n        fetch('/api/localites').then(r => r.json())\n      ]);\n\n      console.log('Loaded entities:', {\n        instruments: instrumentsResponse.data?.data?.length || 0,\n        familles: famillesResponse.data?.data?.length || 0,\n        groupes: groupesResponse.data?.data?.length || 0,\n        localites: localitesResponse.data?.data?.length || 0\n      });\n\n      // Process relations data\n      const validRelations = (relationsResponse.data || []).filter(relation => \n        relation && \n        relation.sourceId && \n        relation.targetId && \n        relation.relationType &&\n        relation.sourceType && \n        relation.targetType\n      );\n\n      console.log('Loaded relations:', validRelations.length);\n      console.log('Sample relation:', validRelations[0]);\n\n      // Process data into Cytoscape format\n      const processedData = processRelationGraphData(\n        validRelations,\n        {\n          instruments: instrumentsResponse.data?.data || [],\n          familles: famillesResponse.data?.data || [],\n          groupes: groupesResponse.data?.data || [],\n          localites: localitesResponse.data?.data || []\n        }\n      );\n\n      console.log('Processed graph data:', processedData);\n      setGraphData(processedData);\n    } catch (err) {\n      console.error('Error loading graph data:', err);\n      setError('Erreur lors du chargement des données du graphe');\n    } finally {\n      setLoading(false);\n    }\n  };"
+  /**
+   * Load graph data from API
+   */
+  const loadGraphData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Load relations
+      const relationsResponse = await relationsApi.getAll();
+      console.log('Relations response:', relationsResponse);
+      if (!relationsResponse.success) {
+        throw new Error(relationsResponse.error || 'Failed to load relations');
+      }
+
+      // Load all entities from different endpoints
+      const [instrumentsResponse, famillesResponse, groupesResponse, localitesResponse] = await Promise.all([
+        instrumentsApi.getAll({ limit: 1000 }),
+        fetch('/api/familles').then(r => r.json()),
+        fetch('/api/groupes-ethniques').then(r => r.json()),
+        fetch('/api/localites').then(r => r.json())
+      ]);
+
+      console.log('Loaded entities:', {
+        instruments: instrumentsResponse.data?.data?.length || 0,
+        familles: famillesResponse.data?.data?.length || 0,
+        groupes: groupesResponse.data?.data?.length || 0,
+        localites: localitesResponse.data?.data?.length || 0
+      });
+
+      // Process relations data
+      const validRelations = (relationsResponse.data || []).filter(relation => 
+        relation && 
+        relation.sourceId && 
+        relation.targetId && 
+        relation.relationType &&
+        relation.sourceType && 
+        relation.targetType
+      );
+
+      console.log('Loaded relations:', validRelations.length);
+      console.log('Sample relation:', validRelations[0]);
+
+      // Process data into Cytoscape format
+      const processedData = processRelationGraphData(
+        validRelations,
+        {
+          instruments: instrumentsResponse.data?.data || [],
+          familles: famillesResponse.data?.data || [],
+          groupes: groupesResponse.data?.data || [],
+          localites: localitesResponse.data?.data || []
+        }
+      );
+
+      console.log('Processed graph data:', processedData);
+      setGraphData(processedData);
+    } catch (err) {
+      console.error('Error loading graph data:', err);
+      setError('Erreur lors du chargement des données du graphe');
+    } finally {
+      setLoading(false);
+    }
+  };"
 
   /**
    * Process raw data into graph format
    */
-  /**\n   * Process relations and entities into Cytoscape format\n   */\n  const processRelationGraphData = (relations: any[], allEntities: any): RelationGraphData => {\n    const nodes: CytoscapeNode[] = [];\n    const edges: CytoscapeEdge[] = [];\n    const nodeIds = new Set<string>();\n\n    // Entity configurations\n    const entityConfigs = {\n      'Instrument': { color: '#1976d2', size: 40 },\n      'Famille': { color: '#dc004e', size: 35 },\n      'GroupeEthnique': { color: '#2e7d32', size: 30 },\n      'Localite': { color: '#0288d1', size: 30 },\n      'Materiau': { color: '#ed6c02', size: 25 },\n      'Timbre': { color: '#9c27b0', size: 25 },\n      'TechniqueDeJeu': { color: '#795548', size: 25 },\n      'Artisan': { color: '#ff5722', size: 30 },\n      'PatrimoineCulturel': { color: '#607d8b', size: 35 },\n      'Rythme': { color: '#4caf50', size: 30 },\n      'Unknown': { color: '#999', size: 25 },\n    };\n\n    // Relation configurations\n    const relationConfigs = {\n      'appartientA': { color: '#1976d2' },\n      'utilisePar': { color: '#2e7d32' },\n      'produitRythme': { color: '#ff9800' },\n      'localiseA': { color: '#03a9f4' },\n      'constitueDe': { color: '#795548' },\n      'joueAvec': { color: '#9c27b0' },\n      'fabrique': { color: '#ff5722' },\n      'caracterise': { color: '#e91e63' },\n      'englobe': { color: '#607d8b' },\n      'appliqueA': { color: '#8bc34a' },\n      'default': { color: '#666' },\n    };\n\n    // Create a comprehensive entity map\n    const allEntitiesMap = new Map<string, any>();\n    \n    // Add instruments\n    allEntities.instruments.forEach((entity: any) => {\n      const key = `instrument_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Instrument',\n        displayName: entity.nomInstrument || `Instrument ${entity.id}`\n      });\n    });\n\n    // Add familles\n    allEntities.familles.forEach((entity: any) => {\n      const key = `famille_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Famille',\n        displayName: entity.nomFamille || `Famille ${entity.id}`\n      });\n    });\n\n    // Add groupes ethniques\n    allEntities.groupes.forEach((entity: any) => {\n      const key = `groupeethnique_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'GroupeEthnique',\n        displayName: entity.nomGroupe || `Groupe ${entity.id}`\n      });\n    });\n\n    // Add localites\n    allEntities.localites.forEach((entity: any) => {\n      const key = `localite_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Localite',\n        displayName: entity.nomLocalite || `Localité ${entity.id}`\n      });\n    });\n\n    // Create nodes from relations to get all referenced entities\n    const referencedEntities = new Set<string>();\n    relations.forEach((relation) => {\n      if (relation.sourceId && relation.sourceType) {\n        referencedEntities.add(`${relation.sourceType.toLowerCase()}_${relation.sourceId}`);\n      }\n      if (relation.targetId && relation.targetType) {\n        referencedEntities.add(`${relation.targetType.toLowerCase()}_${relation.targetId}`);\n      }\n    });\n\n    // Create Cytoscape nodes for all referenced entities\n    referencedEntities.forEach((entityKey) => {\n      const [type, id] = entityKey.split('_');\n      const entityType = type.charAt(0).toUpperCase() + type.slice(1);\n      \n      let entity = allEntitiesMap.get(entityKey);\n      if (!entity) {\n        // Create placeholder entity if not found\n        entity = {\n          id: parseInt(id),\n          entityType,\n          displayName: `${entityType} ${id}`,\n        };\n      }\n      \n      const config = entityConfigs[entityType as keyof typeof entityConfigs] || entityConfigs.Unknown;\n      \n      if (!nodeIds.has(entityKey)) {\n        nodes.push({\n          data: {\n            id: entityKey,\n            label: entity.displayName || `${entityType} ${id}`,\n            type: entityType,\n            entityType: entityType,\n            size: config.size * settings.nodeSize,\n            color: config.color,\n            originalData: entity,\n          },\n        });\n        nodeIds.add(entityKey);\n      }\n    });\n\n    // Create Cytoscape edges from relations\n    relations.forEach((relation) => {\n      const sourceKey = relation.sourceType && relation.sourceId ? \n        `${relation.sourceType.toLowerCase()}_${relation.sourceId}` : null;\n      const targetKey = relation.targetType && relation.targetId ? \n        `${relation.targetType.toLowerCase()}_${relation.targetId}` : null;\n      \n      if (sourceKey && targetKey && nodeIds.has(sourceKey) && nodeIds.has(targetKey)) {\n        const config = relationConfigs[relation.relationType as keyof typeof relationConfigs] || relationConfigs.default;\n        \n        edges.push({\n          data: {\n            id: `${sourceKey}_${targetKey}_${relation.relationType}`,\n            source: sourceKey,\n            target: targetKey,\n            label: relation.relationType,\n            relationType: relation.relationType,\n            color: config.color,\n            originalData: relation,\n          },\n        });\n      }\n    });\n\n    console.log('Processed relation graph data:', { nodes: nodes.length, edges: edges.length });\n    return { nodes, edges };\n  };"
+  /**
+   * Process relations and entities into Cytoscape format
+   */
+  const processRelationGraphData = (relations: any[], allEntities: any): RelationGraphData => {
+    const nodes: CytoscapeNode[] = [];
+    const edges: CytoscapeEdge[] = [];
+    const nodeIds = new Set<string>();
+
+    // Entity configurations
+    const entityConfigs = {
+      'Instrument': { color: '#1976d2', size: 40 },
+      'Famille': { color: '#dc004e', size: 35 },
+      'GroupeEthnique': { color: '#2e7d32', size: 30 },
+      'Localite': { color: '#0288d1', size: 30 },
+      'Materiau': { color: '#ed6c02', size: 25 },
+      'Timbre': { color: '#9c27b0', size: 25 },
+      'TechniqueDeJeu': { color: '#795548', size: 25 },
+      'Artisan': { color: '#ff5722', size: 30 },
+      'PatrimoineCulturel': { color: '#607d8b', size: 35 },
+      'Rythme': { color: '#4caf50', size: 30 },
+      'Unknown': { color: '#999', size: 25 },
+    };
+
+    // Relation configurations
+    const relationConfigs = {
+      'appartientA': { color: '#1976d2' },
+      'utilisePar': { color: '#2e7d32' },
+      'produitRythme': { color: '#ff9800' },
+      'localiseA': { color: '#03a9f4' },
+      'constitueDe': { color: '#795548' },
+      'joueAvec': { color: '#9c27b0' },
+      'fabrique': { color: '#ff5722' },
+      'caracterise': { color: '#e91e63' },
+      'englobe': { color: '#607d8b' },
+      'appliqueA': { color: '#8bc34a' },
+      'default': { color: '#666' },
+    };
+
+    // Create a comprehensive entity map
+    const allEntitiesMap = new Map<string, any>();
+    
+    // Add instruments
+    allEntities.instruments.forEach((entity: any) => {
+      const key = `instrument_${entity.id}`;
+      allEntitiesMap.set(key, {
+        ...entity,
+        entityType: 'Instrument',
+        displayName: entity.nomInstrument || `Instrument ${entity.id}`
+      });
+    });
+
+    // Add familles
+    allEntities.familles.forEach((entity: any) => {
+      const key = `famille_${entity.id}`;
+      allEntitiesMap.set(key, {
+        ...entity,
+        entityType: 'Famille',
+        displayName: entity.nomFamille || `Famille ${entity.id}`
+      });
+    });
+
+    // Add groupes ethniques
+    allEntities.groupes.forEach((entity: any) => {
+      const key = `groupeethnique_${entity.id}`;
+      allEntitiesMap.set(key, {
+        ...entity,
+        entityType: 'GroupeEthnique',
+        displayName: entity.nomGroupe || `Groupe ${entity.id}`
+      });
+    });
+
+    // Add localites
+    allEntities.localites.forEach((entity: any) => {
+      const key = `localite_${entity.id}`;
+      allEntitiesMap.set(key, {
+        ...entity,
+        entityType: 'Localite',
+        displayName: entity.nomLocalite || `Localité ${entity.id}`
+      });
+    });
+
+    // Create nodes from relations to get all referenced entities
+    const referencedEntities = new Set<string>();
+    relations.forEach((relation) => {
+      if (relation.sourceId && relation.sourceType) {
+        referencedEntities.add(`${relation.sourceType.toLowerCase()}_${relation.sourceId}`);
+      }
+      if (relation.targetId && relation.targetType) {
+        referencedEntities.add(`${relation.targetType.toLowerCase()}_${relation.targetId}`);
+      }
+    });
+
+    // Create Cytoscape nodes for all referenced entities
+    referencedEntities.forEach((entityKey) => {
+      const [type, id] = entityKey.split('_');
+      const entityType = type.charAt(0).toUpperCase() + type.slice(1);
+      
+      let entity = allEntitiesMap.get(entityKey);
+      if (!entity) {
+        // Create placeholder entity if not found
+        entity = {
+          id: parseInt(id),
+          entityType,
+          displayName: `${entityType} ${id}`,
+        };
+      }
+      
+      const config = entityConfigs[entityType as keyof typeof entityConfigs] || entityConfigs.Unknown;
+      
+      if (!nodeIds.has(entityKey)) {
+        nodes.push({
+          data: {
+            id: entityKey,
+            label: entity.displayName || `${entityType} ${id}`,
+            type: entityType,
+            entityType: entityType,
+            size: config.size * settings.nodeSize,
+            color: config.color,
+            originalData: entity,
+          },
+        });
+        nodeIds.add(entityKey);
+      }
+    });
+
+    // Create Cytoscape edges from relations
+    relations.forEach((relation) => {
+      const sourceKey = relation.sourceType && relation.sourceId ? 
+        `${relation.sourceType.toLowerCase()}_${relation.sourceId}` : null;
+      const targetKey = relation.targetType && relation.targetId ? 
+        `${relation.targetType.toLowerCase()}_${relation.targetId}` : null;
+      
+      if (sourceKey && targetKey && nodeIds.has(sourceKey) && nodeIds.has(targetKey)) {
+        const config = relationConfigs[relation.relationType as keyof typeof relationConfigs] || relationConfigs.default;
+        
+        edges.push({
+          data: {
+            id: `${sourceKey}_${targetKey}_${relation.relationType}`,
+            source: sourceKey,
+            target: targetKey,
+            label: relation.relationType,
+            relationType: relation.relationType,
+            color: config.color,
+            originalData: relation,
+          },
+        });
+      }
+    });
+
+    console.log('Processed relation graph data:', { nodes: nodes.length, edges: edges.length });
+    return { nodes, edges };
+  };"
 
   /**
    * Handle Cytoscape events
