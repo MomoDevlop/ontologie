@@ -75,6 +75,14 @@ class Neo4jConnection {
       await session.close();
     }
   }
+
+  // Méthode pour vérifier la connectivité
+  async verifyConnectivity() {
+    if (!this.driver) {
+      throw new Error('Driver Neo4j non initialisé');
+    }
+    return await this.driver.verifyConnectivity();
+  }
 }
 
 // Instance singleton

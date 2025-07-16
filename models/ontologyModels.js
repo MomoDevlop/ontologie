@@ -9,7 +9,8 @@ const InstrumentSchema = Joi.object({
 });
 
 const FamilleSchema = Joi.object({
-  nomFamille: Joi.string().required().valid('Cordes', 'Vents', 'Percussions', 'Electrophones')
+  nomFamille: Joi.string().required().min(2).max(50),
+  descriptionFamille: Joi.string().optional().max(200)
 });
 
 const GroupeEthniqueSchema = Joi.object({
@@ -67,10 +68,6 @@ const RelationSchema = Joi.object({
 const EntityLabels = {
   'Instrument': 'Instrument',
   'Famille': 'Famille',
-  'Cordes': 'Cordes',
-  'Vents': 'Vents', 
-  'Percussions': 'Percussions',
-  'Electrophones': 'Electrophones',
   'GroupeEthnique': 'GroupeEthnique',
   'Rythme': 'Rythme',
   'Localite': 'Localite',
@@ -81,57 +78,67 @@ const EntityLabels = {
   'PatrimoineCulturel': 'PatrimoineCulturel'
 };
 
-// Relations et leurs contraintes
+// Relations et leurs contraintes - Version améliorée pour la réalité musicale
 const RelationConstraints = {
   'appartientA': {
     from: ['Instrument'],
-    to: ['Famille', 'Cordes', 'Vents', 'Percussions', 'Electrophones'],
-    cardinality: '1:1'
+    to: ['Famille'],
+    cardinality: 'N:1',
+    description: 'Plusieurs instruments appartiennent à une famille'
   },
   'utilisePar': {
     from: ['Instrument'],
     to: ['GroupeEthnique'],
-    cardinality: '1:N'
+    cardinality: 'N:N',
+    description: 'Un instrument peut être utilisé par plusieurs groupes ethniques'
   },
   'produitRythme': {
     from: ['Instrument'],
     to: ['Rythme'],
-    cardinality: '1:N'
+    cardinality: 'N:N',
+    description: 'Un instrument peut produire plusieurs rythmes, un rythme peut être produit par plusieurs instruments'
   },
   'localiseA': {
     from: ['Instrument', 'GroupeEthnique', 'Rythme'],
     to: ['Localite'],
-    cardinality: '1:N'
+    cardinality: 'N:N',
+    description: 'Éléments peuvent être présents dans plusieurs localités'
   },
   'constitueDe': {
     from: ['Instrument'],
     to: ['Materiau'],
-    cardinality: '1:N'
+    cardinality: '1:N',
+    description: 'Un instrument peut être constitué de plusieurs matériaux'
   },
   'joueAvec': {
     from: ['Instrument'],
     to: ['TechniqueDeJeu'],
-    cardinality: '1:1'
+    cardinality: '1:N',
+    description: 'Un instrument peut être joué avec plusieurs techniques'
   },
   'fabrique': {
     from: ['Artisan'],
     to: ['Instrument'],
-    cardinality: 'N:1'
+    cardinality: 'N:N',
+    description: 'Un artisan peut fabriquer plusieurs instruments, un instrument peut être fabriqué par plusieurs artisans'
   },
   'caracterise': {
     from: ['Timbre'],
     to: ['Instrument'],
-    cardinality: '1:1'
+    cardinality: 'N:N',
+    description: 'Un instrument peut avoir plusieurs timbres, un timbre peut caractériser plusieurs instruments'
   },
   'appliqueA': {
     from: ['TechniqueDeJeu'],
     to: ['Instrument'],
-    cardinality: '1:1'
+    cardinality: 'N:N',
+    description: 'Une technique peut s\'appliquer à plusieurs instruments'
   },
   'englobe': {
     from: ['PatrimoineCulturel'],
     to: ['Instrument', 'GroupeEthnique', 'Rythme'],
-    cardinality: '1:N'
+    cardinality: '1:N',
+    description: 'Un patrimoine culturel englobe plusieurs éléments'
   }
 };
 

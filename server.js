@@ -85,6 +85,67 @@ app.use('/api/techniques', genericRoutes.techniques);
 app.use('/api/artisans', genericRoutes.artisans);
 app.use('/api/patrimoines', genericRoutes.patrimoines);
 
+// Endpoints de santé
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+app.get('/db-health', async (req, res) => {
+  try {
+    await neo4jConnection.verifyConnectivity();
+    res.json({
+      status: 'OK',
+      database: 'Neo4j',
+      connection: 'healthy',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      database: 'Neo4j',
+      connection: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+app.get('/api/db-health', async (req, res) => {
+  try {
+    await neo4jConnection.verifyConnectivity();
+    res.json({
+      status: 'OK',
+      database: 'Neo4j',
+      connection: 'healthy',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      database: 'Neo4j',
+      connection: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Route par défaut avec documentation API
 app.get('/', (req, res) => {
   res.json({
