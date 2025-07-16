@@ -126,17 +126,34 @@ const SearchResultItem: React.FC<SearchResultItemProps> = ({ result, onClick }) 
           />
         </Box>
         
+        {/* Description */}
         {result.entity?.description && (
           <Typography variant="body2" color="text.secondary" paragraph>
             {result.entity.description}
           </Typography>
         )}
         
-        {result.entity?.anneeCreation && (
-          <Typography variant="caption" color="text.secondary">
-            Année: {result.entity.anneeCreation}
-          </Typography>
-        )}
+        {/* Propriétés spécifiques selon le type */}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+          {result.entity?.anneeCreation && (
+            <Chip size="small" label={`Année: ${result.entity.anneeCreation}`} variant="outlined" />
+          )}
+          {result.entity?.langue && (
+            <Chip size="small" label={`Langue: ${result.entity.langue}`} variant="outlined" />
+          )}
+          {result.entity?.latitude && result.entity?.longitude && (
+            <Chip size="small" label={`Coord: ${result.entity.latitude.toFixed(2)}, ${result.entity.longitude.toFixed(2)}`} variant="outlined" />
+          )}
+          {result.entity?.nomFamille && (
+            <Chip size="small" label={`Famille: ${result.entity.nomFamille}`} variant="outlined" />
+          )}
+          {result.entity?.nomGroupe && (
+            <Chip size="small" label={`Groupe: ${result.entity.nomGroupe}`} variant="outlined" />
+          )}
+          {result.entity?.tempoBPM && (
+            <Chip size="small" label={`Tempo: ${result.entity.tempoBPM} BPM`} variant="outlined" />
+          )}
+        </Box>
       </CardContent>
     </Card>
   );
@@ -199,8 +216,10 @@ const SearchPage: React.FC = () => {
 
     try {
       const response = await searchApi.global(query);
+      console.log('Search response:', response); // Debug log
+      
       if (response.success) {
-        setGlobalResults(response.data);
+        setGlobalResults(response.data || []);
       } else {
         setError(response.error || 'Erreur lors de la recherche');
         setGlobalResults([]);
@@ -221,7 +240,7 @@ const SearchPage: React.FC = () => {
     const { latitude, longitude, radius } = geoParams;
     
     if (!latitude || !longitude) {
-      alert('Veuillez saisir une latitude et une longitude');
+      setError('Veuillez saisir une latitude et une longitude');
       return;
     }
 
@@ -236,13 +255,15 @@ const SearchPage: React.FC = () => {
       });
       
       if (response.success) {
-        setGeoResults(response.data);
+        setGeoResults(response.data || []);
       } else {
         setError(response.error || 'Erreur lors de la recherche géographique');
+        setGeoResults([]);
       }
     } catch (err) {
       console.error('Geographic search error:', err);
       setError('Erreur lors de la recherche géographique');
+      setGeoResults([]);
     } finally {
       setLoading(false);
     }
@@ -255,7 +276,7 @@ const SearchPage: React.FC = () => {
     const { entityId, entityType } = similarityParams;
     
     if (!entityId) {
-      alert('Veuillez saisir un ID d\'entité');
+      setError('Veuillez saisir un ID d\'entité');
       return;
     }
 
@@ -265,13 +286,15 @@ const SearchPage: React.FC = () => {
     try {
       const response = await searchApi.similar(entityId, entityType);
       if (response.success) {
-        setSimilarResults(response.data);
+        setSimilarResults(response.data || []);
       } else {
         setError(response.error || 'Erreur lors de la recherche de similarité');
+        setSimilarResults([]);
       }
     } catch (err) {
       console.error('Similarity search error:', err);
       setError('Erreur lors de la recherche de similarité');
+      setSimilarResults([]);
     } finally {
       setLoading(false);
     }

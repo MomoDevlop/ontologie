@@ -35,6 +35,8 @@ import {
   IconButton,
   Tooltip,
   Alert,
+  Checkbox,
+  Collapse,
 } from '@mui/material';
 import {
   Add,
@@ -44,6 +46,7 @@ import {
   MusicNote,
   Search,
   FilterList,
+  Timeline,
 } from '@mui/icons-material';
 import LoadingSpinner from '../../components/Common/LoadingSpinner';
 import ErrorMessage from '../../components/Common/ErrorMessage';
@@ -63,6 +66,13 @@ interface InstrumentFormData {
   anneeCreation: number | '';
 }
 
+// Form validation errors
+interface FormErrors {
+  nomInstrument?: string;
+  description?: string;
+  anneeCreation?: string;
+}
+
 /**
  * Instruments management page
  */
@@ -76,6 +86,11 @@ const InstrumentsPage: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFamily, setSelectedFamily] = useState<string>('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [yearFrom, setYearFrom] = useState<string>('');
+  const [yearTo, setYearTo] = useState<string>('');
+  const [selectedInstruments, setSelectedInstruments] = useState<number[]>([]);
+  const [showBulkActions, setShowBulkActions] = useState(false);
   
   // Dialog states
   const [openDialog, setOpenDialog] = useState(false);
@@ -87,6 +102,10 @@ const InstrumentsPage: React.FC = () => {
     anneeCreation: '',
   });
   const [formLoading, setFormLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [relations, setRelations] = useState<any[]>([]);
+  const [showRelations, setShowRelations] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   /**
    * Load instruments data
@@ -110,14 +129,24 @@ const InstrumentsPage: React.FC = () => {
         filters: {
           ...(searchQuery && { nomInstrument: searchQuery }),
           ...(selectedFamily && { famille: selectedFamily }),
+          ...(yearFrom && { anneeMin: parseInt(yearFrom) }),
+          ...(yearTo && { anneeMax: parseInt(yearTo) }),
         },
       };
 
       const response = await instrumentsApi.getAll(params);
       
       if (response.success) {
-        setInstruments(response.data.data);
-        setTotalCount(response.pagination.total);
+        // Handle different response structures safely
+        const data = response.data?.data || response.data || [];
+        const instruments = Array.isArray(data) ? data : [];
+        setInstruments(instruments);
+        setTotalCount(
+          response.pagination?.total || 
+          response.data?.total || 
+          instruments.length || 
+          0
+        );
       } else {
         setError(response.error || 'Erreur lors du chargement des instruments');
       }
@@ -136,7 +165,10 @@ const InstrumentsPage: React.FC = () => {
     try {
       const response = await famillesApi.getAll();
       if (response.success) {
-        setFamilles(response.data.data);
+        // Handle different response structures safely
+        const data = response.data?.data || response.data || [];
+        const familles = Array.isArray(data) ? data : [];
+        setFamilles(familles);
       }
     } catch (err) {
       console.error('Error loading families:', err);
@@ -175,6 +207,105 @@ const InstrumentsPage: React.FC = () => {
   };
 
   /**
+   * Clear all filters
+   */
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setSelectedFamily('');
+    setYearFrom('');
+    setYearTo('');
+    setPage(0);
+  };
+
+  /**
+   * Apply advanced filters
+   */
+  const handleApplyFilters = () => {
+    setPage(0);
+    loadInstruments();
+  };
+
+  /**
+   * Handle instrument selection
+   */
+  const handleSelectInstrument = (instrumentId: number) => {
+    setSelectedInstruments(prev => 
+      prev.includes(instrumentId)
+        ? prev.filter(id => id !== instrumentId)
+        : [...prev, instrumentId]
+    );
+  };
+
+  /**
+   * Handle select all instruments
+   */
+  const handleSelectAll = () => {
+    if (selectedInstruments.length === instruments.length) {
+      setSelectedInstruments([]);
+    } else {
+      setSelectedInstruments(instruments.map(i => i.id));
+    }
+  };
+
+  /**
+   * Handle bulk delete
+   */
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${selectedInstruments.length} instruments ?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const id of selectedInstruments) {
+        try {
+          await instrumentsApi.delete(id);
+          successCount++;
+        } catch {
+          errorCount++;
+        }
+      }
+
+      setSelectedInstruments([]);
+      loadInstruments();
+      
+      if (errorCount === 0) {
+        setSuccessMessage(`${successCount} instruments supprimés avec succès`);
+      } else {
+        setError(`${successCount} instruments supprimés, ${errorCount} erreurs`);
+      }
+      
+      setTimeout(() => {
+        setSuccessMessage(null);
+        setError(null);
+      }, 5000);
+    } catch (err) {
+      setError('Erreur lors de la suppression en lot');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Load instrument relations
+   */
+  const loadInstrumentRelations = async (instrumentId: number) => {
+    try {
+      const response = await instrumentsApi.getById(instrumentId);
+      if (response.success) {
+        // TODO: Implement relations API call
+        // const relationsResponse = await instrumentsApi.getRelations(instrumentId);
+        setRelations([]);
+      }
+    } catch (err) {
+      console.error('Error loading relations:', err);
+    }
+  };
+
+  /**
    * Open create dialog
    */
   const handleCreate = () => {
@@ -184,6 +315,7 @@ const InstrumentsPage: React.FC = () => {
       description: '',
       anneeCreation: '',
     });
+    setFormErrors({});
     setOpenDialog(true);
   };
 
@@ -198,6 +330,7 @@ const InstrumentsPage: React.FC = () => {
       description: instrument.description || '',
       anneeCreation: instrument.anneeCreation || '',
     });
+    setFormErrors({});
     setOpenDialog(true);
   };
 
@@ -207,7 +340,23 @@ const InstrumentsPage: React.FC = () => {
   const handleView = (instrument: Instrument) => {
     setDialogMode('view');
     setSelectedInstrument(instrument);
+    setFormData({
+      nomInstrument: instrument.nomInstrument,
+      description: instrument.description || '',
+      anneeCreation: instrument.anneeCreation || '',
+    });
+    setFormErrors({});
+    loadInstrumentRelations(instrument.id);
     setOpenDialog(true);
+  };
+
+  /**
+   * Handle view relations
+   */
+  const handleViewRelations = (instrument: Instrument) => {
+    setSelectedInstrument(instrument);
+    loadInstrumentRelations(instrument.id);
+    setShowRelations(true);
   };
 
   /**
@@ -218,14 +367,54 @@ const InstrumentsPage: React.FC = () => {
       ...prev,
       [field]: value,
     }));
+    
+    // Clear field error when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [field]: undefined,
+      }));
+    }
+  };
+
+  /**
+   * Validate form data
+   */
+  const validateForm = (): boolean => {
+    const errors: FormErrors = {};
+    
+    // Validate instrument name
+    if (!formData.nomInstrument.trim()) {
+      errors.nomInstrument = 'Le nom de l\'instrument est requis';
+    } else if (formData.nomInstrument.trim().length < 2) {
+      errors.nomInstrument = 'Le nom doit contenir au moins 2 caractères';
+    } else if (formData.nomInstrument.trim().length > 100) {
+      errors.nomInstrument = 'Le nom ne peut pas dépasser 100 caractères';
+    }
+    
+    // Validate description
+    if (formData.description && formData.description.length > 500) {
+      errors.description = 'La description ne peut pas dépasser 500 caractères';
+    }
+    
+    // Validate year
+    if (formData.anneeCreation !== '') {
+      const year = Number(formData.anneeCreation);
+      const currentYear = new Date().getFullYear();
+      if (isNaN(year) || year < 1 || year > currentYear) {
+        errors.anneeCreation = `L'année doit être entre 1 et ${currentYear}`;
+      }
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   /**
    * Handle form submission
    */
   const handleFormSubmit = async () => {
-    if (!formData.nomInstrument.trim()) {
-      alert('Le nom de l\'instrument est requis');
+    if (!validateForm()) {
       return;
     }
 
@@ -242,21 +431,29 @@ const InstrumentsPage: React.FC = () => {
         if (response.success) {
           setOpenDialog(false);
           loadInstruments();
+          setFormData({ nomInstrument: '', description: '', anneeCreation: '' });
+          setFormErrors({});
+          setSuccessMessage(`Instrument "${response.data.nomInstrument}" créé avec succès`);
+          setTimeout(() => setSuccessMessage(null), 5000);
         } else {
-          alert(response.error || 'Erreur lors de la création');
+          setFormErrors({ nomInstrument: response.error || 'Erreur lors de la création' });
         }
       } else if (dialogMode === 'edit' && selectedInstrument) {
         const response = await instrumentsApi.update(selectedInstrument.id, submitData);
         if (response.success) {
           setOpenDialog(false);
           loadInstruments();
+          setFormData({ nomInstrument: '', description: '', anneeCreation: '' });
+          setFormErrors({});
+          setSuccessMessage(`Instrument "${response.data.nomInstrument}" modifié avec succès`);
+          setTimeout(() => setSuccessMessage(null), 5000);
         } else {
-          alert(response.error || 'Erreur lors de la modification');
+          setFormErrors({ nomInstrument: response.error || 'Erreur lors de la modification' });
         }
       }
     } catch (err) {
       console.error('Form submission error:', err);
-      alert('Erreur lors de la soumission du formulaire');
+      setFormErrors({ nomInstrument: 'Erreur lors de la soumission du formulaire' });
     } finally {
       setFormLoading(false);
     }
@@ -274,8 +471,10 @@ const InstrumentsPage: React.FC = () => {
       const response = await instrumentsApi.delete(instrument.id);
       if (response.success) {
         loadInstruments();
+        setSuccessMessage(`Instrument "${instrument.nomInstrument}" supprimé avec succès`);
+        setTimeout(() => setSuccessMessage(null), 5000);
       } else {
-        alert(response.error || 'Erreur lors de la suppression');
+        setError(response.error || 'Erreur lors de la suppression');
       }
     } catch (err) {
       console.error('Delete error:', err);
@@ -297,24 +496,63 @@ const InstrumentsPage: React.FC = () => {
   return (
     <Box>
       {/* Page Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Typography variant="h4" component="h1" gutterBottom>
-            Instruments de Musique
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Gérez les instruments de musique de votre ontologie
-          </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom>
+              Instruments de Musique
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Gérez les instruments de musique de votre ontologie
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={handleCreate}
+            size="large"
+          >
+            Ajouter un Instrument
+          </Button>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={handleCreate}
-          size="large"
-        >
-          Ajouter un Instrument
-        </Button>
+        
+        {/* Quick Stats */}
+        <Card sx={{ background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)', color: 'white' }}>
+          <CardContent>
+            <Grid container spacing={3} alignItems="center">
+              <Grid item>
+                <MusicNote sx={{ fontSize: 40, opacity: 0.8 }} />
+              </Grid>
+              <Grid item xs>
+                <Typography variant="h6">
+                  {totalCount} instruments au total
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                  {familles.length > 0 ? `Répartis dans ${familles.length} familles` : 'Chargement des familles...'}
+                </Typography>
+              </Grid>
+              <Grid item>
+                <Button
+                  variant="outlined"
+                  sx={{ color: 'white', borderColor: 'white' }}
+                  onClick={() => handleFamilyFilterChange('')}
+                >
+                  Voir tout
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
       </Box>
+
+      {/* Success Alert */}
+      {successMessage && (
+        <Box sx={{ mb: 3 }}>
+          <Alert severity="success" onClose={() => setSuccessMessage(null)}>
+            {successMessage}
+          </Alert>
+        </Box>
+      )}
 
       {/* Error Alert */}
       {error && (
@@ -347,36 +585,144 @@ const InstrumentsPage: React.FC = () => {
                 label="Famille"
               >
                 <MenuItem value="">Toutes les familles</MenuItem>
-                {familles.map((famille) => (
+                {familles && familles.length > 0 ? familles.map((famille) => (
                   <MenuItem key={famille.id} value={famille.nomFamille}>
                     {famille.nomFamille}
                   </MenuItem>
-                ))}
+                )) : null}
               </Select>
             </FormControl>
           </Grid>
           <Grid item xs={12} md={3}>
-            <Typography variant="body2" color="text.secondary">
-              {totalCount} instrument{totalCount > 1 ? 's' : ''} trouvé{totalCount > 1 ? 's' : ''}
-            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+              <Button
+                variant={showAdvancedFilters ? 'contained' : 'outlined'}
+                size="small"
+                startIcon={<FilterList />}
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              >
+                Filtres
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleClearFilters}
+                disabled={!searchQuery && !selectedFamily && !yearFrom && !yearTo}
+              >
+                Effacer
+              </Button>
+            </Box>
+            <Box sx={{ textAlign: 'right', mt: 1 }}>
+              <Typography variant="h6" color="primary">
+                {totalCount}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                résultat{totalCount > 1 ? 's' : ''}
+              </Typography>
+            </Box>
           </Grid>
         </Grid>
+        
+        {/* Advanced Filters */}
+        {showAdvancedFilters && (
+          <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Filtres avancés
+            </Typography>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="Année minimum"
+                  type="number"
+                  size="small"
+                  value={yearFrom}
+                  onChange={(e) => setYearFrom(e.target.value)}
+                  inputProps={{ min: 1, max: new Date().getFullYear() }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="Année maximum"
+                  type="number"
+                  size="small"
+                  value={yearTo}
+                  onChange={(e) => setYearTo(e.target.value)}
+                  inputProps={{ min: 1, max: new Date().getFullYear() }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Button
+                  variant="contained"
+                  onClick={handleApplyFilters}
+                  fullWidth
+                >
+                  Appliquer les filtres
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
+        )}
       </Paper>
 
+      {/* Bulk Actions Bar */}
+      <Collapse in={selectedInstruments.length > 0}>
+        <Paper sx={{ p: 2, mb: 2, backgroundColor: 'primary.light', color: 'primary.contrastText' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="subtitle1">
+              {selectedInstruments.length} instrument{selectedInstruments.length > 1 ? 's' : ''} sélectionné{selectedInstruments.length > 1 ? 's' : ''}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setSelectedInstruments([])}
+                sx={{ color: 'primary.contrastText', borderColor: 'primary.contrastText' }}
+              >
+                Désélectionner
+              </Button>
+              <Button
+                variant="contained"
+                size="small"
+                color="error"
+                startIcon={<Delete />}
+                onClick={handleBulkDelete}
+              >
+                Supprimer
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+      </Collapse>
+
       {/* Instruments Table */}
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={{ boxShadow: 3 }}>
         <Table>
           <TableHead>
-            <TableRow>
-              <TableCell>Nom</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>Année de Création</TableCell>
-              <TableCell align="right">Actions</TableCell>
+            <TableRow sx={{ backgroundColor: 'grey.50' }}>
+              <TableCell sx={{ fontWeight: 'bold', width: '48px' }}>
+                <Checkbox
+                  checked={instruments.length > 0 && selectedInstruments.length === instruments.length}
+                  indeterminate={selectedInstruments.length > 0 && selectedInstruments.length < instruments.length}
+                  onChange={handleSelectAll}
+                />
+              </TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>Nom</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>Année de Création</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {instruments.map((instrument) => (
-              <TableRow key={instrument.id} hover>
+            {instruments && instruments.length > 0 ? instruments.map((instrument) => (
+              <TableRow key={instrument.id} hover selected={selectedInstruments.includes(instrument.id)}>
+                <TableCell>
+                  <Checkbox
+                    checked={selectedInstruments.includes(instrument.id)}
+                    onChange={() => handleSelectInstrument(instrument.id)}
+                  />
+                </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
                     <MusicNote sx={{ mr: 1, color: 'primary.main' }} />
@@ -420,6 +766,15 @@ const InstrumentsPage: React.FC = () => {
                       <Edit />
                     </IconButton>
                   </Tooltip>
+                  <Tooltip title="Voir les relations">
+                    <IconButton 
+                      onClick={() => handleViewRelations(instrument)}
+                      size="small"
+                      color="info"
+                    >
+                      <Timeline />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Supprimer">
                     <IconButton 
                       onClick={() => handleDelete(instrument)}
@@ -431,7 +786,15 @@ const InstrumentsPage: React.FC = () => {
                   </Tooltip>
                 </TableCell>
               </TableRow>
-            ))}
+            )) : (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  <Typography variant="body2" color="text.secondary">
+                    Aucun instrument trouvé
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
         
@@ -451,12 +814,38 @@ const InstrumentsPage: React.FC = () => {
         />
       </TableContainer>
 
+      {/* Relations Dialog */}
+      <Dialog
+        open={showRelations}
+        onClose={() => setShowRelations(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          Relations - {selectedInstrument?.nomInstrument}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Fonctionnalité de visualisation des relations en cours de développement.
+            Les relations sémantiques de cet instrument seront affichées ici.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowRelations(false)}>
+            Fermer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Create/Edit Dialog */}
       <Dialog 
         open={openDialog} 
         onClose={() => setOpenDialog(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: { minHeight: '500px' }
+        }}
       >
         <DialogTitle>
           {dialogMode === 'create' && 'Créer un Instrument'}
@@ -488,7 +877,11 @@ const InstrumentsPage: React.FC = () => {
                     label="Nom de l'instrument"
                     value={formData.nomInstrument}
                     onChange={(e) => handleFormChange('nomInstrument', e.target.value)}
+                    error={!!formErrors.nomInstrument}
+                    helperText={formErrors.nomInstrument || 'Nom unique de l\'instrument'}
                     required
+                    disabled={dialogMode === 'view'}
+                    inputProps={{ maxLength: 100 }}
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -499,6 +892,10 @@ const InstrumentsPage: React.FC = () => {
                     rows={3}
                     value={formData.description}
                     onChange={(e) => handleFormChange('description', e.target.value)}
+                    error={!!formErrors.description}
+                    helperText={formErrors.description || `${formData.description.length}/500 caractères`}
+                    disabled={dialogMode === 'view'}
+                    inputProps={{ maxLength: 500 }}
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -508,6 +905,9 @@ const InstrumentsPage: React.FC = () => {
                     type="number"
                     value={formData.anneeCreation}
                     onChange={(e) => handleFormChange('anneeCreation', e.target.value)}
+                    error={!!formErrors.anneeCreation}
+                    helperText={formErrors.anneeCreation || 'Année de création ou de première utilisation (optionnel)'}
+                    disabled={dialogMode === 'view'}
                     inputProps={{ min: 1, max: new Date().getFullYear() }}
                   />
                 </Grid>
