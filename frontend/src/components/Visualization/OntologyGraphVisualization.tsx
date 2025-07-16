@@ -324,20 +324,20 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
     setError(null);
 
     try {
-      // Load ontology structure
       const ontologyResponse = await relationsApi.getOntology();
+      console.log('Ontology response:', ontologyResponse);
       if (!ontologyResponse.success) {
         throw new Error(ontologyResponse.error || 'Failed to load ontology');
       }
 
-      // Load actual relations
       const relationsResponse = await relationsApi.getAll();
+      console.log('Relations response:', relationsResponse);
       if (!relationsResponse.success) {
         throw new Error(relationsResponse.error || 'Failed to load relations');
       }
 
-      // Load entities for individual nodes
       const entitiesResponse = await instrumentsApi.getAll({ limit: 50 });
+      console.log('Entities response:', entitiesResponse);
       const entities = entitiesResponse.success ? entitiesResponse.data?.data || [] : [];
 
       // Validate data before processing
@@ -345,12 +345,11 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
       const relationsData = Array.isArray(relationsResponse.data) ? relationsResponse.data : [];
       const entitiesData = Array.isArray(entities) ? entities : [];
 
-      // Process data
-      const processedData = processOntologyToCytoscape(
-        ontologyData,
-        relationsData,
-        entitiesData
-      );
+      // Process data - use minimal data if needed for testing
+      const USE_MINIMAL_DATA = false; // Set to true to test with minimal data
+      const processedData = USE_MINIMAL_DATA 
+        ? processMinimalOntologyToCytoscape()
+        : processOntologyToCytoscape(ontologyData, relationsData, entitiesData);
 
       // Validate processed data
       if (!processedData || !Array.isArray(processedData.nodes) || !Array.isArray(processedData.edges)) {
@@ -369,6 +368,30 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
   };
 
   /**
+   * Test with minimal data to isolate the issue
+   */
+  const processMinimalOntologyToCytoscape = (): OntologyGraphData => {
+    return {
+      nodes: [
+        { data: { id: 'class_Instrument', label: 'Instrument', type: 'class', nodeType: 'Instrument' } },
+        { data: { id: 'class_Famille', label: 'Famille', type: 'class', nodeType: 'Famille' } },
+      ],
+      edges: [
+        {
+          data: {
+            id: 'class_Instrument_class_Famille_subclass',
+            source: 'class_Instrument',
+            target: 'class_Famille',
+            label: 'Subclass',
+            relationType: 'subclass',
+            relationship: 'subclass',
+          },
+        },
+      ],
+    };
+  };
+
+  /**
    * Process ontology data into Cytoscape format
    */
   const processOntologyToCytoscape = (
@@ -380,21 +403,19 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
     const edges: CytoscapeEdge[] = [];
     const nodeIds = new Set<string>();
 
-    // Validate input data
+    // Validate input
     if (!ontology || !Array.isArray(relations) || !Array.isArray(entities)) {
-      console.warn('Invalid data provided to processOntologyToCytoscape');
+      console.warn('Invalid input data:', { ontology, relations, entities });
       return { nodes: [], edges: [] };
     }
 
-    // Add entity type nodes (classes) from ontology metadata
-    const entityTypes = ontology.metadata && ontology.metadata.entitiesCount 
+    // Add entity type nodes
+    const entityTypes = (ontology.metadata?.entitiesCount
       ? Object.keys(ontology.metadata.entitiesCount)
-      : ['Instrument', 'Famille', 'GroupeEthnique', 'Localite', 
-         'Materiau', 'Timbre', 'TechniqueDeJeu', 'Artisan', 'PatrimoineCulturel', 'Rythme'];
+      : ['Instrument', 'Famille', 'GroupeEthnique', 'Localite', 'Materiau', 'Timbre', 'TechniqueDeJeu', 'Artisan', 'PatrimoineCulturel', 'Rythme'])
+      .filter(type => type && typeof type === 'string');
 
     entityTypes.forEach(entityType => {
-      if (!entityType || typeof entityType !== 'string') return;
-      
       const nodeId = `class_${entityType}`;
       if (!nodeIds.has(nodeId)) {
         nodes.push({
@@ -404,21 +425,17 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
             type: 'class',
             nodeType: entityType,
             description: `Classe ${entityType}`,
-          }
+          },
         });
         nodeIds.add(nodeId);
       }
     });
 
-    // Add property nodes from relations - get from actual ontology
-    const relationTypes = ontology.children && ontology.children.length > 0 
-      ? ontology.children.find(c => c.name === 'Relations Sémantiques')?.children?.map(r => r.name) || []
-      : ['appartientA', 'utilisePar', 'produitRythme', 'localiseA',
-         'constitueDe', 'joueAvec', 'fabrique', 'caracterise', 'appliqueA', 'englobe'];
+    // Add property nodes
+    const relationTypes = (ontology.children?.find(c => c.name === 'Relations Sémantiques')?.children?.map(r => r.name) || [])
+      .filter(type => type && typeof type === 'string');
 
     relationTypes.forEach(relationType => {
-      if (!relationType || typeof relationType !== 'string') return;
-      
       const propertyId = `property_${relationType}`;
       if (!nodeIds.has(propertyId)) {
         nodes.push({
@@ -428,27 +445,26 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
             type: 'property',
             nodeType: 'Property',
             description: `Propriété ${relationType}`,
-          }
+          },
         });
         nodeIds.add(propertyId);
       }
     });
 
-    // Add some individual instances
-    entities.slice(0, 10).forEach((entity, index) => {
-      if (!entity || entity.id === undefined) return;
-      
+    // Add individual nodes
+    entities.slice(0, 10).forEach((entity) => {
+      if (!entity || !entity.id || !entity.nomInstrument) return;
       const individualId = `individual_${entity.id}`;
       if (!nodeIds.has(individualId)) {
         nodes.push({
           data: {
             id: individualId,
-            label: entity.nomInstrument || `Entity ${entity.id}`,
+            label: entity.nomInstrument,
             type: 'individual',
             nodeType: 'Individual',
             description: entity.description || 'Instance individuelle',
             properties: entity,
-          }
+          },
         });
         nodeIds.add(individualId);
       }
@@ -553,6 +569,7 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
       }
     });
 
+    console.log('Processed graph data:', { nodes, edges });
     return { nodes, edges };
   };
 
@@ -560,42 +577,38 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
    * Handle Cytoscape events
    */
   const handleCytoscapeEvents = useCallback((cy: cytoscape.Core) => {
-    if (!cy) return;
-    
-    // Clean up previous instance if exists
-    if (cyRef.current) {
-      try {
-        cyRef.current.removeAllListeners();
-      } catch (err) {
-        console.warn('Error cleaning up previous cytoscape instance:', err);
-      }
+    if (!cy) {
+      console.warn('Cytoscape instance is null');
+      return;
     }
-    
+
+    let isMounted = true;
     cyRef.current = cy;
-    
-    // Batch operations to prevent concurrent updates
+
+    // Clean up previous listeners
+    try {
+      cy.removeAllListeners();
+    } catch (err) {
+      console.warn('Error removing previous listeners:', err);
+    }
+
     cy.startBatch();
 
-    // Wait for cytoscape to be ready
     cy.ready(() => {
-      // Additional safety check
-      if (!cy) {
-        console.warn('Cytoscape instance is null');
+      if (!isMounted || !cyRef.current) {
+        console.warn('Cytoscape instance is null or component unmounted');
         return;
       }
-      // Node selection (only on single click, not drag)
+      // Node selection
       cy.on('tap', 'node', (event) => {
+        if (!isMounted || !cyRef.current) return;
         const node = event.target;
         if (!node || !node.data) return;
-        
+
         const nodeData = node.data();
-        
         setSelectedNode(nodeData);
-        if (onNodeSelect) {
-          onNodeSelect(nodeData);
-        }
-        
-        // Highlight connected elements
+        if (onNodeSelect) onNodeSelect(nodeData);
+
         try {
           cy.elements().removeClass('highlighted');
           node.addClass('highlighted');
@@ -606,34 +619,34 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
         }
       });
       
-      // Handle node dragging events
+      // Dragging events
       cy.on('grab', 'node', (event) => {
+        if (!isMounted) return;
         const node = event.target;
         node.addClass('dragging');
-        console.log('Node grab started:', node.data('label'));
       });
-      
+
       cy.on('drag', 'node', (event) => {
+        if (!isMounted) return;
         const node = event.target;
-        // Update node position during drag
         console.log('Node dragging:', node.data('label'), node.position());
       });
-      
+
       cy.on('free', 'node', (event) => {
+        if (!isMounted) return;
         const node = event.target;
         node.removeClass('dragging');
         console.log('Node drag ended:', node.data('label'), node.position());
       });
 
-      // Background tap to deselect
+      // Background tap
       cy.on('tap', (event) => {
-        if (event.target === cy) {
-          try {
-            cy.elements().removeClass('highlighted');
-            setSelectedNode(null);
-          } catch (err) {
-            console.warn('Error deselecting elements:', err);
-          }
+        if (!isMounted || event.target !== cy) return;
+        try {
+          cy.elements().removeClass('highlighted');
+          setSelectedNode(null);
+        } catch (err) {
+          console.warn('Error deselecting elements:', err);
         }
       });
 
@@ -661,54 +674,45 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
       });
       
 
-      // Apply layout safely with delay (only if auto-layout is enabled)
-      if (settings.autoLayout) {
+      // Apply layout
+      if (settings.autoLayout && cy.nodes().length > 0) {
         setTimeout(() => {
+          if (!isMounted || !cyRef.current || cyRef.current.nodes().length === 0) {
+            console.warn('Skipping layout: instance null, unmounted, or no nodes');
+            return;
+          }
           try {
-            // Check if cytoscape is still valid
-            if (!cy || cy.nodes().length === 0) {
-              return;
-            }
-            
             const layoutConfig = {
               ...layoutOptions[settings.layout as keyof typeof layoutOptions],
-              // Ensure layout doesn't override manual node positioning
               stop: () => {
-                setTimeout(() => {
-                  try {
-                    if (cy && cy.nodes) {
-                      cy.nodes().forEach(node => {
-                        if (node && node.grabify) {
-                          node.grabify();
-                        }
-                      });
-                    }
-                  } catch (err) {
-                    console.warn('Error in layout stop callback:', err);
-                  }
-                }, 50);
-              }
+                if (!isMounted || !cyRef.current) return;
+                try {
+                  cyRef.current.nodes().forEach(node => {
+                    if (node && node.grabify) node.grabify();
+                  });
+                } catch (err) {
+                  console.warn('Error in layout stop:', err);
+                }
+              },
             };
-            
-            if (layoutConfig) {
-              const layout = cy.layout(layoutConfig);
-              if (layout) {
-                layout.run();
-              }
-            }
+            const layout = cyRef.current.layout(layoutConfig);
+            layout.run();
           } catch (err) {
             console.warn('Error applying layout:', err);
           }
         }, 200);
       }
       
-      // End batch operations
       try {
         cy.endBatch();
       } catch (err) {
         console.warn('Error ending batch:', err);
       }
     });
+
+    return () => {
+      isMounted = false;
+    };
   }, [settings.layout, onNodeSelect]);
 
   /**
@@ -786,14 +790,33 @@ const OntologyGraphVisualization: React.FC<OntologyGraphVisualizationProps> = ({
     };
   }, [isFullscreen]);
 
+  // Debug effect to track graphData state
+  useEffect(() => {
+    console.log('Graph data updated:', graphData);
+    if (cyRef.current && graphData.nodes.length > 0) {
+      console.log('Cytoscape instance active with nodes:', cyRef.current.nodes().length);
+    }
+  }, [graphData]);
+
   // Cleanup effect to prevent memory leaks
   React.useEffect(() => {
+    let isMounted = true;
+
+    loadOntologyGraphData().then(() => {
+      if (isMounted && graphData.nodes.length > 0) {
+        console.log('Graph data loaded:', graphData);
+      }
+    });
+
     return () => {
+      isMounted = false;
       if (cyRef.current) {
         try {
           cyRef.current.removeAllListeners();
+          cyRef.current.destroy(); // Explicitly destroy the Cytoscape instance
+          cyRef.current = null;
         } catch (err) {
-          console.warn('Error cleaning up cytoscape instance:', err);
+          console.warn('Error during cleanup:', err);
         }
       }
     };
