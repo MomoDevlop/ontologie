@@ -2,7 +2,7 @@
  * Graph Visualization Component
  * 
  * This component provides interactive graph visualization for Neo4j relationships
- * using D3.js force-directed graphs. Features include:
+ * using Cytoscape.js. Features include:
  * - Interactive node and link exploration
  * - Entity type-based coloring and sizing
  * - Zoom and pan capabilities
@@ -51,38 +51,41 @@ import {
   FilterList,
   Refresh,
 } from '@mui/icons-material';
-import * as d3 from 'd3';
+import CytoscapeComponent from 'react-cytoscapejs';
+import cytoscape from 'cytoscape';
 import { relationsApi, instrumentsApi } from '../../services/api';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import ErrorMessage from '../Common/ErrorMessage';
 
-// Graph data interfaces
-interface GraphNode {
-  id: string;
-  name: string;
-  type: string;
-  group: number;
-  size: number;
-  color: string;
-  data: any;
-  x?: number;
-  y?: number;
-  fx?: number | null;
-  fy?: number | null;
+// Cytoscape data interfaces
+interface CytoscapeNode {
+  data: {
+    id: string;
+    label: string;
+    type: string;
+    entityType: string;
+    size: number;
+    color: string;
+    originalData: any;
+  };
+  position?: { x: number; y: number };
 }
 
-interface GraphLink {
-  source: string | GraphNode;
-  target: string | GraphNode;
-  type: string;
-  strength: number;
-  color: string;
-  data: any;
+interface CytoscapeEdge {
+  data: {
+    id: string;
+    source: string;
+    target: string;
+    label: string;
+    relationType: string;
+    color: string;
+    originalData: any;
+  };
 }
 
-interface GraphData {
-  nodes: GraphNode[];
-  links: GraphLink[];
+interface RelationGraphData {
+  nodes: CytoscapeNode[];
+  edges: CytoscapeEdge[];
 }
 
 // Entity type configurations
@@ -123,7 +126,7 @@ interface GraphVisualizationProps {
   /** Initial entity to focus on */
   focusEntity?: { id: number; type: string };
   /** Callback when node is selected */
-  onNodeSelect?: (node: GraphNode) => void;
+  onNodeSelect?: (node: any) => void;
 }
 
 /**
@@ -135,26 +138,140 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   focusEntity,
   onNodeSelect,
 }) => {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
+  const isMountedRef = useRef(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [graphData, setGraphData] = useState<RelationGraphData>({ nodes: [], edges: [] });
+  const [selectedNode, setSelectedNode] = useState<any>(null);
   const [openNodeDialog, setOpenNodeDialog] = useState(false);
   
   // Visualization settings
   const [settings, setSettings] = useState({
     showLabels: true,
-    linkStrength: 0.5,
+    layout: 'cose',
     nodeSize: 1.0,
-    chargeStrength: -300,
     filterByType: 'all',
     filterByRelation: 'all',
   });
 
-  // D3 simulation and elements
-  const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
-  const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+  // Layout options for Cytoscape
+  const layoutOptions = {
+    'cose': { 
+      name: 'cose', 
+      idealEdgeLength: 100, 
+      nodeOverlap: 20,
+      animate: true,
+      animationDuration: 500,
+      fit: true,
+      padding: 30
+    },
+    'circle': { 
+      name: 'circle', 
+      radius: 200,
+      animate: true,
+      animationDuration: 500,
+      fit: true,
+      padding: 30
+    },
+    'grid': { 
+      name: 'grid', 
+      rows: 3,
+      animate: true,
+      animationDuration: 500,
+      fit: true,
+      padding: 30
+    },
+    'breadthfirst': { 
+      name: 'breadthfirst', 
+      directed: true,
+      animate: true,
+      animationDuration: 500,
+      fit: true,
+      padding: 30
+    },
+  };
+
+  // Cytoscape stylesheet for relations graph
+  const cytoscapeStylesheet = [
+    // Base node style
+    {
+      selector: 'node',
+      style: {
+        'background-color': 'data(color)',
+        'label': 'data(label)',
+        'text-valign': 'center',
+        'text-halign': 'center',
+        'font-size': '12px',
+        'font-family': 'Arial, sans-serif',
+        'color': '#000',
+        'text-wrap': 'wrap',
+        'text-max-width': '80px',
+        'width': 'data(size)',
+        'height': 'data(size)',
+        'border-width': '2px',
+        'border-color': '#666',
+        'overlay-opacity': 0,
+        'cursor': 'grab',
+      } as any,
+    },
+    // Node when being dragged
+    {
+      selector: 'node:grabbed',
+      style: {
+        'cursor': 'grabbing',
+        'border-width': '3px',
+        'border-color': '#FF5722',
+      } as any,
+    },
+    // Base edge style
+    {
+      selector: 'edge',
+      style: {
+        'width': '2px',
+        'line-color': 'data(color)',
+        'target-arrow-color': 'data(color)',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'label': 'data(label)',
+        'font-size': '10px',
+        'text-rotation': 'autorotate',
+        'text-margin-y': -10,
+        'edge-text-rotation': 'autorotate',
+      } as any,
+    },
+    // Selected elements
+    {
+      selector: ':selected',
+      style: {
+        'border-width': '4px',
+        'border-color': '#FF5722',
+        'line-color': '#FF5722',
+        'target-arrow-color': '#FF5722',
+      } as any,
+    },
+    // Hover effects
+    {
+      selector: 'node:hover',
+      style: {
+        'border-width': '3px',
+        'border-color': '#FF9800',
+        'cursor': 'grab',
+      } as any,
+    },
+    // Highlighted elements
+    {
+      selector: '.highlighted',
+      style: {
+        'border-width': '4px',
+        'border-color': '#2196F3',
+        'line-color': '#2196F3',
+        'target-arrow-color': '#2196F3',
+        'line-style': 'solid',
+        'width': '3px',
+      } as any,
+    },
+  ];
 
   /**
    * Load graph data
@@ -164,185 +281,162 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   }, [focusEntity]);
 
   /**
-   * Initialize D3 visualization when data changes
+   * Initialize when data changes
    */
   useEffect(() => {
     if (graphData.nodes.length > 0) {
-      initializeVisualization();
+      console.log('Graph data ready for visualization:', graphData);
     }
   }, [graphData, settings]);
 
   /**
-   * Cleanup simulation on unmount
+   * Cleanup on unmount
    */
   useEffect(() => {
     return () => {
-      if (simulationRef.current) {
-        simulationRef.current.stop();
-        simulationRef.current = null;
+      isMountedRef.current = false;
+      if (cyRef.current) {
+        try {
+          cyRef.current.removeAllListeners();
+          cyRef.current.destroy();
+        } catch (err) {
+          console.warn('Error cleaning up cytoscape instance:', err);
+        }
+        cyRef.current = null;
       }
     };
   }, []);
 
-  /**
-   * Load graph data from API
-   */
-  const loadGraphData = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Load relations
-      const relationsResponse = await relationsApi.getAll();
-      if (!relationsResponse.success) {
-        throw new Error(relationsResponse.error || 'Failed to load relations');
-      }
-
-      // Load entities (load more to get a comprehensive view)
-      const entitiesResponse = await instrumentsApi.getAll({ limit: 200 });
-      if (!entitiesResponse.success) {
-        throw new Error(entitiesResponse.error || 'Failed to load entities');
-      }
-
-      // Process relations data to ensure we have valid relation objects
-      const validRelations = (relationsResponse.data || []).filter(relation => 
-        relation && 
-        relation.sourceId && 
-        relation.targetId && 
-        relation.relationType &&
-        relation.sourceType && 
-        relation.targetType
-      );
-
-      console.log('Loaded relations:', validRelations.length);
-      console.log('Sample relation:', validRelations[0]);
-
-      // Process data into graph format
-      const processedData = processGraphData(
-        validRelations,
-        entitiesResponse.data.data || []
-      );
-
-      console.log('Processed graph data:', processedData);
-      setGraphData(processedData);
-    } catch (err) {
-      console.error('Error loading graph data:', err);
-      setError('Erreur lors du chargement des données du graphe');
-    } finally {
-      setLoading(false);
-    }
-  };
+  /**\n   * Load graph data from API\n   */\n  const loadGraphData = async () => {\n    setLoading(true);\n    setError(null);\n\n    try {\n      // Load relations\n      const relationsResponse = await relationsApi.getAll();\n      console.log('Relations response:', relationsResponse);\n      if (!relationsResponse.success) {\n        throw new Error(relationsResponse.error || 'Failed to load relations');\n      }\n\n      // Load all entities from different endpoints\n      const [instrumentsResponse, famillesResponse, groupesResponse, localitesResponse] = await Promise.all([\n        instrumentsApi.getAll({ limit: 1000 }),\n        fetch('/api/familles').then(r => r.json()),\n        fetch('/api/groupes-ethniques').then(r => r.json()),\n        fetch('/api/localites').then(r => r.json())\n      ]);\n\n      console.log('Loaded entities:', {\n        instruments: instrumentsResponse.data?.data?.length || 0,\n        familles: famillesResponse.data?.data?.length || 0,\n        groupes: groupesResponse.data?.data?.length || 0,\n        localites: localitesResponse.data?.data?.length || 0\n      });\n\n      // Process relations data\n      const validRelations = (relationsResponse.data || []).filter(relation => \n        relation && \n        relation.sourceId && \n        relation.targetId && \n        relation.relationType &&\n        relation.sourceType && \n        relation.targetType\n      );\n\n      console.log('Loaded relations:', validRelations.length);\n      console.log('Sample relation:', validRelations[0]);\n\n      // Process data into Cytoscape format\n      const processedData = processRelationGraphData(\n        validRelations,\n        {\n          instruments: instrumentsResponse.data?.data || [],\n          familles: famillesResponse.data?.data || [],\n          groupes: groupesResponse.data?.data || [],\n          localites: localitesResponse.data?.data || []\n        }\n      );\n\n      console.log('Processed graph data:', processedData);\n      setGraphData(processedData);\n    } catch (err) {\n      console.error('Error loading graph data:', err);\n      setError('Erreur lors du chargement des données du graphe');\n    } finally {\n      setLoading(false);\n    }\n  };"
 
   /**
    * Process raw data into graph format
    */
-  const processGraphData = (relations: any[], entities: any[]): GraphData => {
-    const nodeMap = new Map<string, GraphNode>();
-    const links: GraphLink[] = [];
-
-    // Load all types of entities, not just instruments
-    const loadAllEntities = async () => {
-      try {
-        const allEntities = new Map<string, any>();
-        
-        // Add instruments
-        entities.forEach((entity) => {
-          allEntities.set(`instrument_${entity.id}`, {
-            ...entity,
-            entityType: 'Instrument',
-            displayName: entity.nomInstrument || `Instrument ${entity.id}`
-          });
-        });
-        
-        return allEntities;
-      } catch (error) {
-        console.error('Error loading entities:', error);
-        return new Map();
-      }
-    };
-
-    // Create a comprehensive entity map
-    const allEntitiesMap = new Map<string, any>();
-    entities.forEach((entity) => {
-      allEntitiesMap.set(`instrument_${entity.id}`, {
-        ...entity,
-        entityType: 'Instrument',
-        displayName: entity.nomInstrument || `Instrument ${entity.id}`
-      });
-    });
-
-    // Create nodes from relations to get all referenced entities
-    const referencedEntities = new Set<string>();
-    relations.forEach((relation) => {
-      if (relation.sourceId && relation.sourceType) {
-        referencedEntities.add(`${relation.sourceType.toLowerCase()}_${relation.sourceId}`);
-      }
-      if (relation.targetId && relation.targetType) {
-        referencedEntities.add(`${relation.targetType.toLowerCase()}_${relation.targetId}`);
-      }
-    });
-
-    // Create nodes for all referenced entities
-    referencedEntities.forEach((entityKey) => {
-      const [type, id] = entityKey.split('_');
-      const entityType = type.charAt(0).toUpperCase() + type.slice(1);
-      
-      let entity = allEntitiesMap.get(entityKey);
-      if (!entity) {
-        // Create placeholder entity if not found
-        entity = {
-          id: parseInt(id),
-          entityType,
-          displayName: `${entityType} ${id}`,
-        };
-      }
-      
-      const config = ENTITY_CONFIGS[entityType as keyof typeof ENTITY_CONFIGS] || 
-                    { color: '#999', size: 8, icon: '?' };
-      
-      nodeMap.set(entityKey, {
-        id: entityKey,
-        name: entity.displayName || `${entityType} ${id}`,
-        type: entityType,
-        group: Object.keys(ENTITY_CONFIGS).indexOf(entityType),
-        size: config.size * settings.nodeSize,
-        color: config.color,
-        data: entity,
-      });
-    });
-
-    // Create links from relations
-    relations.forEach((relation) => {
-      const sourceKey = relation.sourceType && relation.sourceId ? 
-        `${relation.sourceType.toLowerCase()}_${relation.sourceId}` : null;
-      const targetKey = relation.targetType && relation.targetId ? 
-        `${relation.targetType.toLowerCase()}_${relation.targetId}` : null;
-      
-      if (sourceKey && targetKey && nodeMap.has(sourceKey) && nodeMap.has(targetKey)) {
-        const config = RELATION_CONFIGS[relation.relationType as keyof typeof RELATION_CONFIGS] || 
-                      RELATION_CONFIGS.default;
-        
-        links.push({
-          source: sourceKey,
-          target: targetKey,
-          type: relation.relationType,
-          strength: config.strength * settings.linkStrength,
-          color: config.color,
-          data: relation,
-        });
-      }
-    });
-
-    return {
-      nodes: Array.from(nodeMap.values()),
-      links,
-    };
-  };
+  /**\n   * Process relations and entities into Cytoscape format\n   */\n  const processRelationGraphData = (relations: any[], allEntities: any): RelationGraphData => {\n    const nodes: CytoscapeNode[] = [];\n    const edges: CytoscapeEdge[] = [];\n    const nodeIds = new Set<string>();\n\n    // Entity configurations\n    const entityConfigs = {\n      'Instrument': { color: '#1976d2', size: 40 },\n      'Famille': { color: '#dc004e', size: 35 },\n      'GroupeEthnique': { color: '#2e7d32', size: 30 },\n      'Localite': { color: '#0288d1', size: 30 },\n      'Materiau': { color: '#ed6c02', size: 25 },\n      'Timbre': { color: '#9c27b0', size: 25 },\n      'TechniqueDeJeu': { color: '#795548', size: 25 },\n      'Artisan': { color: '#ff5722', size: 30 },\n      'PatrimoineCulturel': { color: '#607d8b', size: 35 },\n      'Rythme': { color: '#4caf50', size: 30 },\n      'Unknown': { color: '#999', size: 25 },\n    };\n\n    // Relation configurations\n    const relationConfigs = {\n      'appartientA': { color: '#1976d2' },\n      'utilisePar': { color: '#2e7d32' },\n      'produitRythme': { color: '#ff9800' },\n      'localiseA': { color: '#03a9f4' },\n      'constitueDe': { color: '#795548' },\n      'joueAvec': { color: '#9c27b0' },\n      'fabrique': { color: '#ff5722' },\n      'caracterise': { color: '#e91e63' },\n      'englobe': { color: '#607d8b' },\n      'appliqueA': { color: '#8bc34a' },\n      'default': { color: '#666' },\n    };\n\n    // Create a comprehensive entity map\n    const allEntitiesMap = new Map<string, any>();\n    \n    // Add instruments\n    allEntities.instruments.forEach((entity: any) => {\n      const key = `instrument_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Instrument',\n        displayName: entity.nomInstrument || `Instrument ${entity.id}`\n      });\n    });\n\n    // Add familles\n    allEntities.familles.forEach((entity: any) => {\n      const key = `famille_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Famille',\n        displayName: entity.nomFamille || `Famille ${entity.id}`\n      });\n    });\n\n    // Add groupes ethniques\n    allEntities.groupes.forEach((entity: any) => {\n      const key = `groupeethnique_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'GroupeEthnique',\n        displayName: entity.nomGroupe || `Groupe ${entity.id}`\n      });\n    });\n\n    // Add localites\n    allEntities.localites.forEach((entity: any) => {\n      const key = `localite_${entity.id}`;\n      allEntitiesMap.set(key, {\n        ...entity,\n        entityType: 'Localite',\n        displayName: entity.nomLocalite || `Localité ${entity.id}`\n      });\n    });\n\n    // Create nodes from relations to get all referenced entities\n    const referencedEntities = new Set<string>();\n    relations.forEach((relation) => {\n      if (relation.sourceId && relation.sourceType) {\n        referencedEntities.add(`${relation.sourceType.toLowerCase()}_${relation.sourceId}`);\n      }\n      if (relation.targetId && relation.targetType) {\n        referencedEntities.add(`${relation.targetType.toLowerCase()}_${relation.targetId}`);\n      }\n    });\n\n    // Create Cytoscape nodes for all referenced entities\n    referencedEntities.forEach((entityKey) => {\n      const [type, id] = entityKey.split('_');\n      const entityType = type.charAt(0).toUpperCase() + type.slice(1);\n      \n      let entity = allEntitiesMap.get(entityKey);\n      if (!entity) {\n        // Create placeholder entity if not found\n        entity = {\n          id: parseInt(id),\n          entityType,\n          displayName: `${entityType} ${id}`,\n        };\n      }\n      \n      const config = entityConfigs[entityType as keyof typeof entityConfigs] || entityConfigs.Unknown;\n      \n      if (!nodeIds.has(entityKey)) {\n        nodes.push({\n          data: {\n            id: entityKey,\n            label: entity.displayName || `${entityType} ${id}`,\n            type: entityType,\n            entityType: entityType,\n            size: config.size * settings.nodeSize,\n            color: config.color,\n            originalData: entity,\n          },\n        });\n        nodeIds.add(entityKey);\n      }\n    });\n\n    // Create Cytoscape edges from relations\n    relations.forEach((relation) => {\n      const sourceKey = relation.sourceType && relation.sourceId ? \n        `${relation.sourceType.toLowerCase()}_${relation.sourceId}` : null;\n      const targetKey = relation.targetType && relation.targetId ? \n        `${relation.targetType.toLowerCase()}_${relation.targetId}` : null;\n      \n      if (sourceKey && targetKey && nodeIds.has(sourceKey) && nodeIds.has(targetKey)) {\n        const config = relationConfigs[relation.relationType as keyof typeof relationConfigs] || relationConfigs.default;\n        \n        edges.push({\n          data: {\n            id: `${sourceKey}_${targetKey}_${relation.relationType}`,\n            source: sourceKey,\n            target: targetKey,\n            label: relation.relationType,\n            relationType: relation.relationType,\n            color: config.color,\n            originalData: relation,\n          },\n        });\n      }\n    });\n\n    console.log('Processed relation graph data:', { nodes: nodes.length, edges: edges.length });\n    return { nodes, edges };\n  };"
 
   /**
-   * Initialize D3 force simulation and visualization
+   * Handle Cytoscape events
    */
-  const initializeVisualization = useCallback(() => {
+  const handleCytoscapeEvents = useCallback((cy: cytoscape.Core) => {
+    if (!cy || !isMountedRef.current) return;
+    
+    // Clean up previous instance
+    if (cyRef.current) {
+      try {
+        cyRef.current.removeAllListeners();
+      } catch (err) {
+        console.warn('Error cleaning up previous cytoscape instance:', err);
+      }
+    }
+    
+    cyRef.current = cy;
+    let isMounted = true;
+
+    // Clean up previous listeners
+    try {
+      cy.removeAllListeners();
+    } catch (err) {
+      console.warn('Error removing previous listeners:', err);
+    }
+
+    cy.startBatch();
+
+    cy.ready(() => {
+      if (!isMounted || !cyRef.current) {
+        console.warn('Cytoscape instance is null or component unmounted');
+        return;
+      }
+
+      // Node selection
+      cy.on('tap', 'node', (event) => {
+        if (!isMounted || !cyRef.current) return;
+        const node = event.target;
+        if (!node || !node.data) return;
+
+        const nodeData = node.data();
+        setSelectedNode(nodeData);
+        if (onNodeSelect) onNodeSelect(nodeData);
+        setOpenNodeDialog(true);
+
+        try {
+          cy.elements().removeClass('highlighted');
+          node.addClass('highlighted');
+          node.connectedEdges().addClass('highlighted');
+          node.connectedEdges().connectedNodes().addClass('highlighted');
+        } catch (err) {
+          console.warn('Error highlighting elements:', err);
+        }
+      });
+
+      // Dragging events
+      cy.on('grab', 'node', (event) => {
+        if (!isMounted) return;
+        const node = event.target;
+        if (node && node.addClass) {
+          node.addClass('dragging');
+        }
+      });
+
+      cy.on('free', 'node', (event) => {
+        if (!isMounted) return;
+        const node = event.target;
+        if (node && node.removeClass) {
+          node.removeClass('dragging');
+        }
+      });
+
+      // Background tap
+      cy.on('tap', (event) => {
+        if (!isMounted || event.target !== cy) return;
+        try {
+          cy.elements().removeClass('highlighted');
+          setSelectedNode(null);
+          setOpenNodeDialog(false);
+        } catch (err) {
+          console.warn('Error deselecting elements:', err);
+        }
+      });
+
+      // Apply layout
+      if (cy.nodes().length > 0) {
+        setTimeout(() => {
+          if (!isMounted || !cyRef.current || cyRef.current.nodes().length === 0) {
+            console.warn('Skipping layout: instance null, unmounted, or no nodes');
+            return;
+          }
+          try {
+            const layoutConfig = {
+              ...layoutOptions[settings.layout as keyof typeof layoutOptions],
+              stop: () => {
+                if (!isMounted || !cyRef.current) return;
+                try {
+                  cyRef.current.nodes().forEach(node => {
+                    if (node && node.grabify) node.grabify();
+                  });
+                } catch (err) {
+                  console.warn('Error in layout stop:', err);
+                }
+              },
+            };
+            const layout = cyRef.current.layout(layoutConfig);
+            layout.run();
+          } catch (err) {
+            console.warn('Error applying layout:', err);
+          }
+        }, 200);
+      }
+
+      try {
+        cy.endBatch();
+      } catch (err) {
+        console.warn('Error ending batch:', err);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [settings.layout, onNodeSelect]);
     if (!svgRef.current || !graphData.nodes.length) return;
 
     // Stop any existing simulation
@@ -690,48 +784,50 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
   /**
    * Handle zoom controls
    */
-  const handleZoom = (scale: number) => {
-    if (!svgRef.current) return;
-    
-    const svg = d3.select(svgRef.current);
-    const newTransform = transformRef.current.scale(scale);
-    
-    svg.transition()
-      .duration(300)
-      .call(d3.zoom<SVGSVGElement, unknown>().transform, newTransform);
+  const handleZoom = (factor: number) => {
+    if (cyRef.current) {
+      try {
+        const currentZoom = cyRef.current.zoom();
+        const newZoom = currentZoom * factor;
+        const clampedZoom = Math.max(0.1, Math.min(5, newZoom));
+        cyRef.current.zoom({ level: clampedZoom });
+      } catch (err) {
+        console.warn('Error during zoom:', err);
+      }
+    }
   };
 
   /**
    * Center the graph
    */
   const handleCenter = () => {
-    if (!svgRef.current) return;
-    
-    const svg = d3.select(svgRef.current);
-    svg.transition()
-      .duration(500)
-      .call(d3.zoom<SVGSVGElement, unknown>().transform, d3.zoomIdentity);
+    if (cyRef.current) {
+      try {
+        cyRef.current.fit();
+        cyRef.current.center();
+      } catch (err) {
+        console.warn('Error centering graph:', err);
+      }
+    }
   };
 
   /**
-   * Export graph as SVG
+   * Export graph as PNG
    */
   const handleExport = () => {
-    if (!svgRef.current) return;
-    
-    const svgElement = svgRef.current;
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svgElement);
-    const blob = new Blob([svgString], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'graph-visualization.svg';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (cyRef.current) {
+      try {
+        const png64 = cyRef.current.png({ scale: 2 });
+        const link = document.createElement('a');
+        link.href = png64;
+        link.download = 'relations-graph.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (err) {
+        console.warn('Error exporting graph:', err);
+      }
+    }
   };
 
   /**
@@ -807,30 +903,32 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
               />
             </Grid>
 
+            <Grid item>
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Layout</InputLabel>
+                <Select
+                  value={settings.layout}
+                  onChange={(e) => setSettings(prev => ({ ...prev, layout: e.target.value }))}
+                  label="Layout"
+                >
+                  <MenuItem value="cose">Cose (Défaut)</MenuItem>
+                  <MenuItem value="circle">Circulaire</MenuItem>
+                  <MenuItem value="grid">Grille</MenuItem>
+                  <MenuItem value="breadthfirst">Hiérarchique</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
             <Grid item xs>
               <Typography variant="body2" color="text.secondary">
-                {graphData.nodes.length} nœuds, {graphData.links.length} liens
+                {graphData.nodes.length} nœuds, {graphData.edges.length} relations
               </Typography>
             </Grid>
           </Grid>
 
           {/* Advanced Settings */}
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} sm={3}>
-              <Typography gutterBottom>Force des liens</Typography>
-              <Slider
-                value={settings.linkStrength}
-                onChange={(e, value) => setSettings(prev => ({ 
-                  ...prev, 
-                  linkStrength: value as number 
-                }))}
-                min={0.1}
-                max={2.0}
-                step={0.1}
-                size="small"
-              />
-            </Grid>
-            <Grid item xs={12} sm={3}>
+            <Grid item xs={12} sm={6}>
               <Typography gutterBottom>Taille des nœuds</Typography>
               <Slider
                 value={settings.nodeSize}
@@ -844,32 +942,49 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
                 size="small"
               />
             </Grid>
-            <Grid item xs={12} sm={3}>
-              <Typography gutterBottom>Force de répulsion</Typography>
-              <Slider
-                value={Math.abs(settings.chargeStrength)}
-                onChange={(e, value) => setSettings(prev => ({ 
-                  ...prev, 
-                  chargeStrength: -(value as number) 
-                }))}
-                min={100}
-                max={1000}
-                step={50}
-                size="small"
-              />
-            </Grid>
           </Grid>
         </Paper>
       )}
 
       {/* Graph Visualization */}
       <Paper sx={{ position: 'relative', overflow: 'hidden' }}>
-        <svg
-          ref={svgRef}
-          width="100%"
-          height={height}
-          style={{ border: '1px solid #e0e0e0' }}
-        />
+        {graphData && graphData.nodes && graphData.nodes.length > 0 ? (
+          <CytoscapeComponent
+            elements={[...graphData.nodes, ...graphData.edges]}
+            style={{ 
+              width: '100%', 
+              height: `${height}px`,
+              cursor: 'default'
+            }}
+            wheelSensitivity={0.1}
+            minZoom={0.1}
+            maxZoom={5}
+            userZoomingEnabled={true}
+            userPanningEnabled={true}
+            boxSelectionEnabled={false}
+            autoungrabify={false}
+            autounselectify={false}
+            grabbable={true}
+            panningEnabled={true}
+            zoomingEnabled={true}
+            selectionType={'single'}
+            stylesheet={cytoscapeStylesheet}
+            cy={handleCytoscapeEvents}
+            layout={{ name: 'preset' }}
+          />
+        ) : (
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            height: `${height}px`,
+            bgcolor: '#f5f5f5'
+          }}>
+            <Typography variant="h6" color="text.secondary">
+              Aucune relation trouvée
+            </Typography>
+          </Box>
+        )}
         
         {/* Legend */}
         <Box
@@ -893,19 +1008,30 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
           <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: 1 }}>
             Types d'entités:
           </Typography>
-          {Object.entries(ENTITY_CONFIGS).filter(([type]) => type !== 'Unknown').map(([type, config]) => (
-            <Box key={type} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+          {[
+            { name: 'Instrument', color: '#1976d2' },
+            { name: 'Famille', color: '#dc004e' },
+            { name: 'GroupeEthnique', color: '#2e7d32' },
+            { name: 'Localite', color: '#0288d1' },
+            { name: 'Materiau', color: '#ed6c02' },
+            { name: 'Timbre', color: '#9c27b0' },
+            { name: 'TechniqueDeJeu', color: '#795548' },
+            { name: 'Artisan', color: '#ff5722' },
+            { name: 'PatrimoineCulturel', color: '#607d8b' },
+            { name: 'Rythme', color: '#4caf50' },
+          ].map(({ name, color }) => (
+            <Box key={name} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
               <Box
                 sx={{
                   width: 12,
                   height: 12,
-                  bgcolor: config.color,
+                  bgcolor: color,
                   borderRadius: '50%',
                   mr: 1,
                 }}
               />
               <Typography variant="caption">
-                {config.icon} {type}
+                {name}
               </Typography>
             </Box>
           ))}
@@ -914,18 +1040,29 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
           <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mt: 2 }}>
             Types de relations:
           </Typography>
-          {Object.entries(RELATION_CONFIGS).filter(([type]) => type !== 'default').map(([type, config]) => (
-            <Box key={type} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+          {[
+            { name: 'appartientA', color: '#1976d2' },
+            { name: 'utilisePar', color: '#2e7d32' },
+            { name: 'produitRythme', color: '#ff9800' },
+            { name: 'localiseA', color: '#03a9f4' },
+            { name: 'constitueDe', color: '#795548' },
+            { name: 'joueAvec', color: '#9c27b0' },
+            { name: 'fabrique', color: '#ff5722' },
+            { name: 'caracterise', color: '#e91e63' },
+            { name: 'englobe', color: '#607d8b' },
+            { name: 'appliqueA', color: '#8bc34a' },
+          ].map(({ name, color }) => (
+            <Box key={name} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
               <Box
                 sx={{
                   width: 2,
                   height: 12,
-                  bgcolor: config.color,
+                  bgcolor: color,
                   mr: 1,
                 }}
               />
               <Typography variant="caption">
-                {type}
+                {name}
               </Typography>
             </Box>
           ))}
@@ -951,7 +1088,7 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  {selectedNode.name}
+                  {selectedNode.label}
                 </Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={6}>
@@ -970,13 +1107,13 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({
                   </Grid>
                 </Grid>
                 
-                {selectedNode.data && (
+                {selectedNode.originalData && (
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                       Données
                     </Typography>
                     <pre style={{ fontSize: '12px', overflow: 'auto' }}>
-                      {JSON.stringify(selectedNode.data, null, 2)}
+                      {JSON.stringify(selectedNode.originalData, null, 2)}
                     </pre>
                   </Box>
                 )}
