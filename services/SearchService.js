@@ -358,6 +358,71 @@ class SearchService {
     }
   }
 
+  // Exécution de requêtes Cypher brutes
+  async executeCypherQuery(query, parameters = {}) {
+    try {
+      console.log('Executing Cypher query:', query);
+      console.log('With parameters:', parameters);
+      
+      const result = await neo4jConnection.executeQuery(query, parameters);
+      
+      return result.records.map(record => {
+        const recordData = {};
+        record.keys.forEach((key, index) => {
+          const value = record._fields[index];
+          recordData[key] = this.formatValue(value);
+        });
+        return recordData;
+      });
+    } catch (error) {
+      throw new Error(`Erreur lors de l'exécution de la requête Cypher: ${error.message}`);
+    }
+  }
+
+  // Formatter une valeur Neo4j
+  formatValue(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    
+    // Cas des entiers Neo4j
+    if (neo4j.isInt && neo4j.isInt(value)) {
+      return value.toNumber();
+    }
+    
+    // Cas des nœuds
+    if (value && typeof value === 'object' && value.identity !== undefined) {
+      return this.formatNode(value);
+    }
+    
+    // Cas des relations
+    if (value && typeof value === 'object' && value.type !== undefined && value.start !== undefined) {
+      return {
+        id: value.identity.toNumber(),
+        type: value.type,
+        startId: value.start.toNumber(),
+        endId: value.end.toNumber(),
+        properties: value.properties
+      };
+    }
+    
+    // Cas des tableaux
+    if (Array.isArray(value)) {
+      return value.map(item => this.formatValue(item));
+    }
+    
+    // Cas des objets simples
+    if (typeof value === 'object') {
+      const formatted = {};
+      Object.keys(value).forEach(key => {
+        formatted[key] = this.formatValue(value[key]);
+      });
+      return formatted;
+    }
+    
+    return value;
+  }
+
   // Formatter un nœud Neo4j
   formatNode(node) {
     if (!node) return null;
