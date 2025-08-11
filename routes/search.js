@@ -247,4 +247,55 @@ router.get('/centrality', async (req, res) => {
   }
 });
 
+// POST /api/search/cypher - Exécution de requêtes Cypher brutes
+router.post('/cypher', async (req, res) => {
+  try {
+    const { query, parameters = {} } = req.body;
+    
+    if (!query || query.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Requête Cypher requise',
+        message: 'Veuillez fournir une requête Cypher dans le body de la requête'
+      });
+    }
+
+    // Validation de sécurité - empêcher les requêtes dangereuses
+    const dangerousKeywords = ['DELETE', 'REMOVE', 'SET', 'CREATE', 'MERGE', 'DROP', 'DETACH'];
+    const upperQuery = query.toUpperCase();
+    
+    const hasDangerousKeyword = dangerousKeywords.some(keyword => 
+      upperQuery.includes(keyword)
+    );
+    
+    if (hasDangerousKeyword) {
+      return res.status(403).json({
+        success: false,
+        error: 'Requête non autorisée',
+        message: 'Seules les requêtes de lecture (MATCH, RETURN, WHERE, etc.) sont autorisées'
+      });
+    }
+
+    const results = await searchService.executeCypherQuery(query, parameters);
+    
+    res.json({
+      success: true,
+      data: {
+        query,
+        parameters,
+        results,
+        count: results.length,
+        executionTime: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de l\'exécution de la requête Cypher',
+      message: error.message,
+      query: req.body.query
+    });
+  }
+});
+
 module.exports = router;
