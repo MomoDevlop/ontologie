@@ -9,9 +9,16 @@ class Neo4jConnection {
 
   async connect() {
     try {
+      // Configuration avec base de données spécifique si définie
+      const config = {};
+      if (process.env.NEO4J_DATABASE) {
+        config.database = process.env.NEO4J_DATABASE;
+      }
+
       this.driver = neo4j.driver(
         process.env.NEO4J_URI,
-        neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
+        neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD),
+        config
       );
 
       // Test de connexion
@@ -25,11 +32,20 @@ class Neo4jConnection {
     }
   }
 
-  getSession() {
+  getSession(accessMode = 'WRITE') {
     if (!this.driver) {
       throw new Error('Driver Neo4j non initialisé');
     }
-    return this.driver.session();
+    
+    const sessionConfig = {};
+    if (process.env.NEO4J_DATABASE) {
+      sessionConfig.database = process.env.NEO4J_DATABASE;
+    }
+    
+    // Spécifier le mode d'accès explicitement
+    sessionConfig.defaultAccessMode = accessMode === 'READ' ? neo4j.session.READ : neo4j.session.WRITE;
+    
+    return this.driver.session(sessionConfig);
   }
 
   async close() {
@@ -40,8 +56,8 @@ class Neo4jConnection {
   }
 
   // Méthode pour exécuter une requête Cypher
-  async executeQuery(query, parameters = {}) {
-    const session = this.getSession();
+  async executeQuery(query, parameters = {}, accessMode = 'WRITE') {
+    const session = this.getSession(accessMode);
     try {
       const result = await session.run(query, parameters);
       return result;

@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const neo4jConnection = require('./config/neo4j');
+const DatabasePopulator = require('./scripts/populateDatabase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,6 +60,95 @@ app.get('/db-health', async (req, res) => {
       status: 'ERROR',
       database: 'Neo4j',
       error: error.message
+    });
+  }
+});
+
+// Route pour populer la base de données
+app.post('/populate-database', async (req, res) => {
+  try {
+    console.log('🚀 Début de la population de la base de données...');
+    const populator = new DatabasePopulator();
+    await populator.populateDatabase();
+    
+    res.json({
+      status: 'SUCCESS',
+      message: 'Base de données peuplée avec succès!',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors de la population:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Erreur lors de la population de la base de données',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Route pour vérifier si la base de données est vide
+app.get('/database-status', async (req, res) => {
+  try {
+    const result = await neo4jConnection.executeQuery('MATCH (n) RETURN count(n) as nodeCount', {}, 'READ');
+    const nodeCount = result.records[0].get('nodeCount').toNumber();
+    
+    res.json({
+      status: 'OK',
+      isEmpty: nodeCount === 0,
+      nodeCount: nodeCount,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'ERROR',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Route pour vider complètement la base de données
+app.delete('/clear-database', async (req, res) => {
+  try {
+    console.log('🗑️ Début du nettoyage de la base de données...');
+    
+    // Compter les nœuds avant suppression
+    const countResult = await neo4jConnection.executeQuery('MATCH (n) RETURN count(n) as nodeCount', {}, 'READ');
+    const nodeCountBefore = countResult.records[0].get('nodeCount').toNumber();
+    
+    if (nodeCountBefore === 0) {
+      return res.json({
+        status: 'INFO',
+        message: 'La base de données est déjà vide',
+        nodesDeleted: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Supprimer tous les nœuds et relations
+    await neo4jConnection.executeQuery('MATCH (n) DETACH DELETE n', {}, 'WRITE');
+    
+    // Vérifier que la base est maintenant vide
+    const verifyResult = await neo4jConnection.executeQuery('MATCH (n) RETURN count(n) as nodeCount', {}, 'READ');
+    const nodeCountAfter = verifyResult.records[0].get('nodeCount').toNumber();
+    
+    console.log('✅ Base de données vidée avec succès');
+    
+    res.json({
+      status: 'SUCCESS',
+      message: 'Base de données vidée avec succès!',
+      nodesDeleted: nodeCountBefore,
+      nodeCountAfter: nodeCountAfter,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erreur lors du nettoyage:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Erreur lors du nettoyage de la base de données',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -160,6 +250,20 @@ app.get('/', (req, res) => {
       dbHealth: {
         path: '/db-health',
         description: 'Santé de la base de données Neo4j'
+      },
+      databaseStatus: {
+        path: '/database-status',
+        description: 'Statut et nombre de nœuds dans la base de données'
+      },
+      populateDatabase: {
+        path: '/populate-database',
+        method: 'POST',
+        description: 'Peupler la base de données avec des données réelles d\'instruments africains'
+      },
+      clearDatabase: {
+        path: '/clear-database',
+        method: 'DELETE',
+        description: 'Vider complètement la base de données (ATTENTION: Supprime toutes les données!)'
       },
       instruments: {
         path: '/api/instruments',
@@ -264,6 +368,25 @@ async function startServer() {
     // Connexion à Neo4j
     console.log('🔄 Connexion à Neo4j en cours...');
     await neo4jConnection.connect();
+    
+    // Vérifier si la base de données est vide et la peupler si nécessaire
+    try {
+      const result = await neo4jConnection.executeQuery('MATCH (n) RETURN count(n) as nodeCount', {}, 'READ');
+      const nodeCount = result.records[0].get('nodeCount').toNumber();
+      
+      if (nodeCount === 0) {
+        console.log('🗄️  Base de données vide détectée');
+        console.log('🚀 Début de la population automatique...');
+        const populator = new DatabasePopulator();
+        await populator.populateDatabase();
+        console.log('✅ Population automatique terminée');
+      } else {
+        console.log(`🗄️  Base de données contient déjà ${nodeCount} nœuds`);
+      }
+    } catch (error) {
+      console.warn('⚠️  Impossible de vérifier l\'état de la base de données:', error.message);
+      console.log('💡 Vous pouvez toujours peupler manuellement avec POST /populate-database');
+    }
     
     // Démarrage du serveur
     app.listen(PORT, () => {
