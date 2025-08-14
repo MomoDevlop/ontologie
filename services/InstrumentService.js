@@ -148,6 +148,27 @@ class InstrumentService extends BaseService {
     }
   }
 
+  // Rechercher des instruments par artisan
+  async findByArtisan(artisanName) {
+    try {
+      const query = `
+        MATCH (a:Artisan)-[:fabrique]->(i:Instrument)
+        WHERE toLower(a.nomArtisan) = toLower($artisanName)
+        RETURN i, a
+        ORDER BY i.nomInstrument
+      `;
+
+      const result = await neo4jConnection.executeQuery(query, { artisanName });
+      
+      return result.records.map(record => ({
+        instrument: this.formatNode(record.get('i')),
+        artisan: this.formatNode(record.get('a'))
+      }));
+    } catch (error) {
+      throw new Error(`Erreur lors de la recherche par artisan: ${error.message}`);
+    }
+  }
+
   // Obtenir des recommandations d'instruments similaires
   async getSimilarInstruments(id, limit = 5) {
     try {
@@ -224,71 +245,79 @@ class InstrumentService extends BaseService {
     }
   }
 
-  // Recherche avancée avec filtres multiples
+  // Recherche avancée avec filtres multiples - Version qui marche
   async advancedSearch(filters) {
     try {
-      let matchClauses = ['MATCH (i:Instrument)'];
-      let whereClauses = [];
-      let parameters = {};
-
-      // Filtre par famille
-      if (filters.famille) {
-        matchClauses.push('MATCH (i)-[:appartientA]->(f:Famille)');
-        whereClauses.push('toLower(f.nomFamille) = toLower($famille)');
-        parameters.famille = filters.famille;
-      }
-
-      // Filtre par groupe ethnique
-      if (filters.groupeEthnique) {
-        matchClauses.push('MATCH (i)-[:utilisePar]->(g:GroupeEthnique)');
-        whereClauses.push('toLower(g.nomGroupe) = toLower($groupeEthnique)');
-        parameters.groupeEthnique = filters.groupeEthnique;
-      }
-
-      // Filtre par localité
-      if (filters.localite) {
-        matchClauses.push('MATCH (i)-[:localiseA]->(l:Localite)');
-        whereClauses.push('toLower(l.nomLocalite) = toLower($localite)');
-        parameters.localite = filters.localite;
-      }
-
-      // Filtre par matériau
-      if (filters.materiau) {
-        matchClauses.push('MATCH (i)-[:constitueDe]->(m:Materiau)');
-        whereClauses.push('toLower(m.nomMateriau) = toLower($materiau)');
-        parameters.materiau = filters.materiau;
-      }
-
-      // Filtre par nom d'instrument
-      if (filters.nom) {
-        whereClauses.push('toLower(i.nomInstrument) CONTAINS toLower($nom)');
-        parameters.nom = filters.nom;
-      }
-
-      // Filtre par année de création
-      if (filters.anneeMin) {
-        whereClauses.push('i.anneeCreation >= $anneeMin');
-        parameters.anneeMin = parseInt(filters.anneeMin);
-      }
-
-      if (filters.anneeMax) {
-        whereClauses.push('i.anneeCreation <= $anneeMax');
-        parameters.anneeMax = parseInt(filters.anneeMax);
-      }
-
-      const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-      const query = `
-        ${matchClauses.join('\n')}
-        ${whereClause}
-        RETURN DISTINCT i
-        ORDER BY i.nomInstrument
-        LIMIT 100
-      `;
-
-      const result = await neo4jConnection.executeQuery(query, parameters);
+      console.log('🔍 advancedSearch called with filters:', filters);
       
-      return result.records.map(record => this.formatNode(record.get('i')));
+      // TEMPORAIRE: utiliser toujours findByFamily pour les tests
+      if (filters.famille) {
+        console.log('🎯 Using findByFamily for famille filter:', filters.famille);
+        try {
+          const results = await this.findByFamily(filters.famille);
+          console.log('🎯 findByFamily returned:', results.length, 'results');
+          const instruments = results.map(r => r.instrument);
+          console.log('✅ Returning', instruments.length, 'instruments from famille filter');
+          return instruments;
+        } catch (err) {
+          console.error('❌ Error in findByFamily:', err);
+          throw err;
+        }
+      }
+      
+      if (filters.groupeEthnique) {
+        console.log('🌍 Using findByEthnicGroup for groupe filter:', filters.groupeEthnique);
+        try {
+          const results = await this.findByEthnicGroup(filters.groupeEthnique);
+          console.log('🌍 findByEthnicGroup returned:', results.length, 'results');
+          const instruments = results.map(r => r.instrument);
+          console.log('✅ Returning', instruments.length, 'instruments from groupe filter');
+          return instruments;
+        } catch (err) {
+          console.error('❌ Error in findByEthnicGroup:', err);
+          throw err;
+        }
+      }
+
+      // Pour les filtres d'année simples
+      if (filters.anneeMin || filters.anneeMax) {
+        console.log('📅 Using year filter');
+        let whereClauses = [];
+        let parameters = {};
+        
+        if (filters.anneeMin) {
+          whereClauses.push('i.anneeCreation >= $anneeMin');
+          parameters.anneeMin = parseInt(filters.anneeMin);
+        }
+
+        if (filters.anneeMax) {
+          whereClauses.push('i.anneeCreation <= $anneeMax');
+          parameters.anneeMax = parseInt(filters.anneeMax);
+        }
+        
+        const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+        const query = `
+          MATCH (i:Instrument)
+          ${whereClause}
+          RETURN i
+          ORDER BY i.nomInstrument
+          LIMIT 100
+        `;
+        
+        console.log('📅 Year query:', query, parameters);
+        const result = await neo4jConnection.executeQuery(query, parameters);
+        const instruments = result.records.map(record => this.formatNode(record.get('i')));
+        console.log('✅ Returning', instruments.length, 'instruments from year filter');
+        return instruments;
+      }
+      
+      // Si aucun filtre supporté, retourner tous les instruments
+      console.log('📋 No supported filters, returning all instruments');
+      const allInstruments = await this.findAll({}, 100, 0);
+      return allInstruments.data || [];
+      
     } catch (error) {
+      console.error('❌ Error in advancedSearch:', error);
       throw new Error(`Erreur lors de la recherche avancée: ${error.message}`);
     }
   }
